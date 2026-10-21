@@ -1,7 +1,10 @@
 // The map: MapLibre draws the basemap, labels and controls; three.js draws the 3D BAG buildings in a custom layer
 // (engine/scene.ts); every building is coloured by the live map app's rules from our own `buildings` tiles. This class
 // owns everything heavy (not reactive) and writes a small, plain UI state that the Vue components render.
-import { Map as MapLibreMap, NavigationControl, ScaleControl, GeolocateControl, type GeoJSONSource } from 'maplibre-gl';
+import { Map as MapLibreMap, NavigationControl, ScaleControl, GeolocateControl, setWorkerUrl, type GeoJSONSource } from 'maplibre-gl';
+// MapLibre 6 looks for its worker as `maplibre-gl-worker.mjs` next to its own file, a name the bundler cannot see, so
+// the worker never ends up in the build ("Worker failed to load"). Ship it as an asset and say where it is.
+import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { makeFrame, type Frame } from '@/engine/tiles';
 import { TileWorkers } from '@/engine/workers';
 import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
@@ -11,7 +14,10 @@ import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
 import { buildingInfo, type BuildingInfo } from '@/search/search';
-import { BAG3D_INDEX, BASEMAP, TILESERVER } from '@/config';
+import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
+import { BAG3D, BASEMAP, TILESERVER } from '@/config';
+
+setWorkerUrl(maplibreWorker);
 
 // ---- UI state (plain data, made reactive by the caller) ------------------------------------------------------------
 export interface LegendRowView { color: string; name: string; count: string; width: number; empty: boolean }
@@ -47,8 +53,6 @@ export function initialUi(): UiState {
 }
 
 // ---- constants ------------------------------------------------------------------------------------------------------
-type IndexTile = [string, number, number, number, number];
-interface Index { base: string; tiles: IndexTile[] }
 const START = { center: [4.4655, 51.9145] as [number, number], zoom: 15.5, pitch: 66, bearing: 72 };
 const MIN_ZOOM_3D = 13.5;
 /** load 3D tiles up to this many metres from the view centre: the far horizon of a tilted view stays empty */
@@ -111,7 +115,12 @@ export class MapController {
   private layer: BuildingLayer;
   private workers = new TileWorkers(2);
   private data: BuildingData;
-  private index: Index | null = null;
+  private tileset = new Bag3dTileset(BAG3D);
+  /** the 3D BAG leaf tiles of the last walk, by uri */
+  private leaves = new Map<string, LeafTile>();
+  private walkSeq = 0;
+  private walkError = false;
+  private walking = false;
   private entries = new Map<string, TileEntry>();
   private entryOfView = new Map<TileView, TileEntry>();
   private queue: string[] = [];
@@ -182,11 +191,6 @@ export class MapController {
     this.map.on('movestart', () => this.renderTooltip(null, 0, 0));
     this.map.on('click', (e) => this.select(this.layer.pick(e.point.x, e.point.y, this.visible)));
     if (location.search.includes('debug')) Object.assign(window as any, { __pick: (x: number, y: number) => this.layer.pick(x, y, this.visible), __layer: this.layer, __ctl: this });
-
-    fetch(BAG3D_INDEX)
-      .then((r) => { if (!r.ok) throw new Error(`3D BAG index ${r.status}`); return r.json(); })
-      .then((index: Index) => { this.index = index; this.updateTiles(); })
-      .catch((err) => { console.error(err); ui.status = { text: 'De 3D-index kon niet laden.', busy: false }; });
   }
 
   private firstSymbol() {
@@ -223,14 +227,30 @@ export class MapController {
   }
 
   // ---- 3D tiles -----------------------------------------------------------------------------------------------------
-  private updateTiles() {
-    if (!this.index || !this.map.getLayer(this.layer.id)) return this.renderStatus();
+  private async updateTiles() {
+    if (!this.map.getLayer(this.layer.id)) return this.renderStatus();
     if (this.map.getZoom() < MIN_ZOOM_3D) return this.renderStatus();
     const view = this.map.getBounds();
+    const seq = ++this.walkSeq;
+    let found: LeafTile[];
+    this.walking = true;
+    this.renderStatus();
+    try {
+      found = await this.tileset.leaves([view.getWest(), view.getSouth(), view.getEast(), view.getNorth()]);
+      this.walkError = false;
+    } catch (err) {
+      console.error(err);
+      this.walkError = true;
+      return this.renderStatus();
+    } finally {
+      if (seq === this.walkSeq) this.walking = false;
+    }
+    // a newer view change already asked again
+    if (seq !== this.walkSeq) return;
+    for (const t of found) this.leaves.set(t[0], t);
     const c = this.map.getCenter();
     const limit = tileDistance(this.map.getZoom());
-    const wanted = this.index.tiles
-      .filter((t) => t[1] <= view.getEast() && t[3] >= view.getWest() && t[2] <= view.getNorth() && t[4] >= view.getSouth())
+    const wanted = found
       .map((t) => ({ t, d: distanceTo(t.slice(1) as number[], c) }))
       .filter((x) => x.d < limit)
       .sort((a, b) => a.d - b.d)
@@ -258,11 +278,11 @@ export class MapController {
   }
 
   private pump() {
-    while (this.active < 4 && this.queue.length && this.index) {
+    while (this.active < 4 && this.queue.length) {
       const uri = this.queue.shift()!;
-      if (this.entries.has(uri)) continue;
-      const t = this.index.tiles.find((x) => x[0] === uri)!;
-      const { done } = this.workers.request(this.index.base + uri, this.frame);
+      const t = this.leaves.get(uri);
+      if (this.entries.has(uri) || !t) continue;
+      const { done } = this.workers.request(this.tileset.base + uri, this.frame);
       const entry: TileEntry = { uri, bounds: t.slice(1) as number[], state: 'loading' };
       const layer = this.layer;
       this.entries.set(uri, entry);
@@ -482,11 +502,11 @@ export class MapController {
 
   private renderStatus() {
     const ready = [...this.entries.values()].filter((e) => e.state === 'ready');
-    const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading;
+    const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading + (this.walking ? 1 : 0);
     const panden = ready.reduce((s, e) => s + (e.view?.tile.features.length ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
-    if (!this.index) text = 'Laden…';
+    if (this.walkError) text = 'De 3D-panden (3DBAG) zijn nu niet bereikbaar';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
     else text = `${nf.format(panden)} panden in 3D · ${ready.length} tegels · ${nf1.format(mb)} MB`;
