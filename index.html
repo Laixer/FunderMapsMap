@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Funderingskaart</title>
+<meta name="description" content="De funderingen van Nederland in 3D: funderingstype, herstel, pandzakking en funderingsrisico per pand.">
+<script>
+  // the colour scheme before first paint (no flash)
+  try {
+    var m = localStorage.getItem('fm-mode');
+    document.documentElement.dataset.theme = m === 'dark' || m === 'light' ? m : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } catch (e) { document.documentElement.dataset.theme = 'light'; }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

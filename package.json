@@ -1,0 +1,33 @@
+{
+  "name": "fundermaps-map",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "browserslist": "> 0.5%, last 2 versions, not dead",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "^2.0.4",
+    "@maplibre/maplibre-gl-style-spec": "^26.4.4",
+    "maplibre-gl": "^6.15.0",
+    "pbf": "^4.0.1",
+    "three": "0.186.1",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/three": "0.186.0",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.4",
+    "vue-tsc": "^3.3.13"
+  }
+}

@@ -1,0 +1,35 @@
+# Builds the national 3D BAG leaf-tile index (tools/3dbag-index.py) on a GitHub runner and keeps it as an artifact.
+# Run it by hand when 3D BAG publishes a new version; commit the file to public/3dbag/.
+name: 3D BAG index
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 3D BAG version
+        default: v20250903
+      lod:
+        description: level of detail (lod12, lod13, lod22)
+        default: lod22
+  push:
+    branches: ['tools/3dbag-index']
+
+permissions:
+  contents: read
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Walk the 3D BAG tileset
+        run: python3 tools/3dbag-index.py "${{ inputs.version || 'v20250903' }}" "${{ inputs.lod || 'lod22' }}"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: 3dbag-index
+          path: public/3dbag/*.json
+          retention-days: 14
