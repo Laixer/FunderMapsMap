@@ -122,6 +122,13 @@ export function legendRange(name: string): [number, number, boolean, boolean] | 
   return null;
 }
 
+/** a layer's filter and colour as MapLibre expressions (in the chosen palette): the flat map draws them as they are */
+export function layerStyle(id: string, palette: PaletteName): { filter: unknown; color: unknown } {
+  const rule = (RULES as Record<string, any>)[id];
+  const map = remap(id, legendOf(id).fields, palette);
+  return { filter: rule.filter, color: map ? recolorExpression(rule.color, map) : rule.color };
+}
+
 /** legend colours of a theme's first section, for the little colour strip next to its name */
 export function legendColors(theme: Theme, palette: PaletteName): number[] {
   const id = theme.sections?.[0].legend ?? theme.layers[0];

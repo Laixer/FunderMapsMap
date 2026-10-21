@@ -5,11 +5,11 @@ import { Map as MapLibreMap, NavigationControl, ScaleControl, GeolocateControl, 
 // MapLibre 6 looks for its worker as `maplibre-gl-worker.mjs` next to its own file, a name the bundler cannot see, so
 // the worker never ends up in the build ("Worker failed to load"). Ship it as an asset and say where it is.
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { makeFrame, type Frame } from '@/engine/tiles';
+import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
 import { TileWorkers } from '@/engine/workers';
 import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
 import { restyle, LOOKS } from '@/engine/basemap';
-import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, legendColors, type Theme, type ThemeResult } from '@/engine/themes';
+import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, type Theme, type ThemeResult } from '@/engine/themes';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
@@ -136,6 +136,13 @@ export class MapController {
   private place: BuildingInfo | null = null;
   private themeTimer = 0;
   private hoverFrame = 0;
+  /**
+   * Flat mode: our own `buildings` tiles drawn as blocks with the live map's rules (MapLibre fill-extrusion), when 3D
+   * BAG cannot be reached (on 2026-10-21 it could not, from anywhere we tested). Back to 3D as soon as it answers.
+   */
+  private flat = false;
+  private flatLayers: string[] = [];
+  private flatSelected: { id: string; props: Props } | null = null;
 
   constructor(container: HTMLElement, private ui: UiState) {
     const intro = location.hash.length <= 1;
@@ -169,6 +176,12 @@ export class MapController {
         paint: { 'circle-pitch-alignment': 'map', 'circle-color': '#3E63DD', 'circle-opacity': 0.08, 'circle-stroke-color': '#3E63DD', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.6, 'circle-radius': 0 },
       }, firstSymbol);
       this.map.addLayer(this.layer, firstSymbol);
+      // flat mode: our own building tiles (layers added by renderFlat) and the outline of a building picked there
+      this.map.addSource('fm', { type: 'vector', url: `${TILESERVER}/buildings` });
+      this.map.addLayer({
+        id: 'fm-flat-selected', type: 'line', source: 'fm', 'source-layer': 'buildings', minzoom: 13,
+        filter: ['==', ['get', 'building_id'], ''], paint: { 'line-color': LOOKS[ui.mode].accent, 'line-width': 3 },
+      }, firstSymbol);
       // without a GPU the shadow pass costs seconds per frame: start with shadows off there (?shadows=on forces them)
       const forced = new URLSearchParams(location.search).get('shadows');
       this.layer.shadows = forced ? forced === 'on' : !this.layer.software;
@@ -182,6 +195,15 @@ export class MapController {
       if (this.hoverFrame) return;
       this.hoverFrame = requestAnimationFrame(() => {
         this.hoverFrame = 0;
+        if (this.flat) {
+          const p = this.flatAt(e.point.x, e.point.y);
+          this.map.getCanvas().style.cursor = p ? 'pointer' : '';
+          if (!p) { this.ui.tooltip = null; return; }
+          const id = String(p.building_id).slice(-16);
+          const b = this.data.index.get(id) ?? -1;
+          this.tooltipFor(b, b >= 0 ? this.data.buildings[b] : p, null, e.point.x, e.point.y);
+          return;
+        }
         const hit = this.layer.pick(e.point.x, e.point.y, this.visible);
         this.setHover(hit);
         this.renderTooltip(hit, e.point.x, e.point.y);
@@ -189,7 +211,11 @@ export class MapController {
     });
     this.map.on('mouseout', () => { this.setHover(null); this.renderTooltip(null, 0, 0); });
     this.map.on('movestart', () => this.renderTooltip(null, 0, 0));
-    this.map.on('click', (e) => this.select(this.layer.pick(e.point.x, e.point.y, this.visible)));
+    this.map.on('click', (e) => {
+      if (!this.flat) return this.select(this.layer.pick(e.point.x, e.point.y, this.visible));
+      const p = this.flatAt(e.point.x, e.point.y);
+      this.selectFlat(p ? { id: String(p.building_id).slice(-16), props: p } : null);
+    });
     if (location.search.includes('debug')) Object.assign(window as any, { __pick: (x: number, y: number) => this.layer.pick(x, y, this.visible), __layer: this.layer, __ctl: this });
   }
 
@@ -238,9 +264,11 @@ export class MapController {
     try {
       found = await this.tileset.leaves([view.getWest(), view.getSouth(), view.getEast(), view.getNorth()]);
       this.walkError = false;
+      if (this.flat) this.setFlat(false);
     } catch (err) {
       console.error(err);
       this.walkError = true;
+      if (!this.flat) this.setFlat(true);
       return this.renderStatus();
     } finally {
       if (seq === this.walkSeq) this.walking = false;
@@ -354,6 +382,73 @@ export class MapController {
     this.renderLayers();
     this.renderLegend();
     this.repaintAll(animate);
+    this.renderFlat();
+    this.renderInfo();
+  }
+
+  // ---- flat mode --------------------------------------------------------------------------------------------------------
+  private setFlat(on: boolean) {
+    this.flat = on;
+    if (on) this.select(null);
+    else this.selectFlat(null);
+    if (this.map.getLayer(this.layer.id)) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
+    this.renderFlat();
+    this.renderStatus();
+  }
+
+  /** the active theme's layers as fill-extrusions on our tiles; the first layer of the theme is drawn on top */
+  private renderFlat() {
+    if (!this.map.getSource('fm')) return;
+    for (const id of this.flatLayers) if (this.map.getLayer(id)) this.map.removeLayer(id);
+    this.flatLayers = [];
+    if (!this.flat) return;
+    // "Omgeving": every building no layer of the theme draws, in the neutral grey of the 3D view (never under a
+    // coloured block, so the two never fight over the same walls)
+    const filters = this.theme.layers.map((rule) => layerStyle(rule, this.ui.palette).filter ?? true);
+    if (this.ui.context && !filters.includes(true)) {
+      this.map.addLayer({
+        id: 'fm-flat-context', type: 'fill-extrusion', source: 'fm', 'source-layer': 'buildings', minzoom: 13,
+        filter: ['!', ['any', ...filters]] as any,
+        paint: {
+          'fill-extrusion-color': toHex(NEUTRAL[this.ui.mode].noData),
+          'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.92,
+        },
+      }, 'fm-flat-selected');
+      this.flatLayers.push('fm-flat-context');
+    }
+    for (const rule of [...this.theme.layers].reverse()) {
+      const { filter, color } = layerStyle(rule, this.ui.palette);
+      const id = `fm-flat-${rule}`;
+      this.map.addLayer({
+        id, type: 'fill-extrusion', source: 'fm', 'source-layer': 'buildings', minzoom: 13,
+        ...(filter ? { filter: filter as any } : {}),
+        paint: {
+          'fill-extrusion-color': color as any,
+          'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.92,
+        },
+      }, 'fm-flat-selected');
+      this.flatLayers.push(id);
+    }
+  }
+
+  /** properties of the building under the pointer in flat mode */
+  private flatAt(x: number, y: number): Props | null {
+    if (!this.flatLayers.length) return null;
+    const f = this.map.queryRenderedFeatures([x, y], { layers: this.flatLayers })[0];
+    return f ? (f.properties as Props) : null;
+  }
+
+  private selectFlat(sel: { id: string; props: Props } | null) {
+    this.flatSelected = sel;
+    if (sel) { this.selected = null; this.layer.setSelected(null, -1); }
+    if (this.map.getLayer('fm-flat-selected')) {
+      this.map.setFilter('fm-flat-selected', ['==', ['get', 'building_id'], sel ? String(sel.props.building_id) : '']);
+    }
+    this.loadPlace();
     this.renderInfo();
   }
 
@@ -366,6 +461,7 @@ export class MapController {
   }
 
   select(hit: Hit | null) {
+    if (!hit && this.flatSelected) return this.selectFlat(null);
     this.selected = hit;
     this.layer.setSelected(hit?.view ?? null, hit?.feature ?? -1);
     this.renderRing();
@@ -447,6 +543,7 @@ export class MapController {
   setContext(on: boolean) {
     this.ui.context = on;
     this.repaintAll(false);
+    this.renderFlat();
   }
 
   setPalette(p: PaletteName) {
@@ -468,6 +565,8 @@ export class MapController {
     this.repaintAll(animate);
     this.renderRing();
     this.renderLegend();
+    this.renderFlat();
+    if (this.map.getLayer('fm-flat-selected')) this.map.setPaintProperty('fm-flat-selected', 'line-color', LOOKS[this.ui.mode].accent);
   }
 
   // ---- UI state -------------------------------------------------------------------------------------------------------
@@ -506,7 +605,7 @@ export class MapController {
     const panden = ready.reduce((s, e) => s + (e.view?.tile.features.length ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
-    if (this.walkError) text = 'De 3D-panden (3DBAG) zijn nu niet bereikbaar';
+    if (this.flat) text = '3D-modellen (3DBAG) niet bereikbaar · panden als blokken';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
     else text = `${nf.format(panden)} panden in 3D · ${ready.length} tegels · ${nf1.format(mb)} MB`;
@@ -532,19 +631,23 @@ export class MapController {
   /** hover card: everything from our tile and the 3D BAG tile, no request */
   private renderTooltip(hit: Hit | null, x: number, y: number) {
     if (!hit) { this.ui.tooltip = null; return; }
-    const f = hit.view.tile.features[hit.feature];
     const { b, p } = this.props(hit);
+    this.tooltipFor(b, p, hit.view.tile.features[hit.feature], x, y);
+  }
+
+  /** f = the 3D BAG feature, null in flat mode */
+  private tooltipFor(b: number, p: Props, f: TileFeature | null, x: number, y: number) {
     const v = this.valueOf(b);
-    const height = f.ridgeHeight !== null && f.groundLevel !== null ? f.ridgeHeight - f.groundLevel : typeof p.height === 'number' ? p.height : null;
+    const height = heightOf(f, p);
     const rel = p.foundation_type_reliability ? L.RELIABILITY[String(p.foundation_type_reliability)] ?? String(p.foundation_type_reliability) : null;
     const facts: [string, string | null][] = [
-      ['Bouwjaar', p.construction_year ? String(p.construction_year) : f.builtYear ? String(f.builtYear) : null],
-      ['Hoogte', height !== null ? `${nf1.format(height)} m${f.storeys ? ` · ${f.storeys} lagen` : ''}` : null],
+      ['Bouwjaar', p.construction_year ? String(p.construction_year) : f?.builtYear ? String(f.builtYear) : null],
+      ['Hoogte', height !== null ? `${nf1.format(height)} m${f?.storeys ? ` · ${f.storeys} lagen` : ''}` : null],
       ['Fundering', p.foundation_type ? `${fmt(p.foundation_type, L.FOUNDATION_TYPE)}${rel ? ` (${rel})` : ''}` : null],
       ['Herstel', fmt(p.recovery_type, L.RECOVERY_TYPE)],
       ['Pandzakking', typeof p.velocity === 'number' ? `${nf1.format(p.velocity)} mm/jaar` : null],
       ['Risico', p.unclassified_risk ? fmt(p.unclassified_risk, L.RISK) : p.drystand_risk ? `Droogstand ${String(p.drystand_risk).toUpperCase()}` : null],
-      ['Oppervlak', f.area ? `${nf.format(Math.round(f.area))} m²${f.roofType ? ` · ${(L.ROOF_TYPE[f.roofType] ?? f.roofType).toLowerCase()}` : ''}` : null],
+      ['Oppervlak', f?.area ? `${nf.format(Math.round(f.area))} m²${f.roofType ? ` · ${(L.ROOF_TYPE[f.roofType] ?? f.roofType).toLowerCase()}` : ''}` : null],
     ];
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
     this.ui.tooltip = {
@@ -558,8 +661,7 @@ export class MapController {
 
   /** address, buurt, wijk and gemeente of the selected pand (our public geocoder) */
   private loadPlace() {
-    const f = this.selected ? this.selected.view.tile.features[this.selected.feature] : null;
-    const id = f ? f.id : null;
+    const id = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
     if (id === this.infoFor) return;
     this.infoFor = id;
     this.place = null;
@@ -574,11 +676,21 @@ export class MapController {
   }
 
   private renderInfo() {
-    if (!this.selected) { this.ui.info = null; return; }
-    const f = this.selected.view.tile.features[this.selected.feature];
-    const { b, p } = this.props(this.selected);
+    let f: TileFeature | null = null, b = -1, p: Props = {}, pandId: string;
+    if (this.selected) {
+      f = this.selected.view.tile.features[this.selected.feature];
+      ({ b, p } = this.props(this.selected));
+      pandId = f.id;
+    } else if (this.flatSelected) {
+      pandId = this.flatSelected.id;
+      b = this.data.index.get(pandId) ?? -1;
+      p = b >= 0 ? this.data.buildings[b] : this.flatSelected.props;
+    } else {
+      this.ui.info = null;
+      return;
+    }
     const rel = (k: string) => (p[k] ? ` · ${L.RELIABILITY[String(p[k])] ?? String(p[k])}` : '');
-    const height = f.ridgeHeight !== null && f.groundLevel !== null ? f.ridgeHeight - f.groundLevel : typeof p.height === 'number' ? p.height : null;
+    const height = heightOf(f, p);
     const v = this.valueOf(b);
     const place = this.place;
     const address = place?.street ? `${place.street} ${place.building_number ?? ''}`.trim() : null;
@@ -591,7 +703,7 @@ export class MapController {
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       hasData: b >= 0,
       stats: [
-        ['Bouwjaar', String(p.construction_year ?? f.builtYear ?? '–')],
+        ['Bouwjaar', String(p.construction_year ?? f?.builtYear ?? '–')],
         ['Hoogte', height !== null ? `${nf1.format(height)} m` : '–'],
         ['Pandzakking', typeof p.velocity === 'number' ? `${nf1.format(p.velocity)} mm/j` : '–'],
         ['Funderingsrisico', p.unclassified_risk ? String(p.unclassified_risk).toUpperCase() : '–'],
@@ -609,7 +721,7 @@ export class MapController {
         ['Handhavingstermijn', typeof p.enforcement_term === 'number' ? `${nf.format(p.enforcement_term)} jaar` : null],
         ['Monitoring', p.monitoring === true ? 'Ja' : null],
       ]),
-      bag: keep([
+      bag: f ? keep([
         ['Status', f.status],
         ['Daktype', fmt(f.roofType, L.ROOF_TYPE)],
         ['Bouwlagen', f.storeys ? String(f.storeys) : null],
@@ -618,8 +730,14 @@ export class MapController {
         ['Volume', f.volume ? `${nf.format(Math.round(f.volume))} m³` : null],
         ['Maaiveld', f.groundLevel !== null ? `${nf1.format(f.groundLevel)} m NAP` : null],
         ['Bouwjaar (BAG)', f.builtYear ? String(f.builtYear) : null],
-      ]),
-      id: `NL.IMBAG.Pand.${f.id}`,
+      ]) : [],
+      id: `NL.IMBAG.Pand.${pandId}`,
     };
   }
+}
+
+/** ridge height above ground from 3D BAG, else the height in our own data */
+function heightOf(f: TileFeature | null, p: Props): number | null {
+  if (f && f.ridgeHeight !== null && f.groundLevel !== null) return f.ridgeHeight - f.groundLevel;
+  return typeof p.height === 'number' ? p.height : null;
 }
