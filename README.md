@@ -1,6 +1,6 @@
 # FunderMaps map (5.0)
 
-The customer map of FunderMaps in 3D: every building of the Netherlands as its 3D BAG model, coloured by its
+The customer map of FunderMaps in 3D: every building of the Netherlands as its 3D model, coloured by its
 foundation type, repair, subsidence and foundation risk. It grows out of the 3D prototype of October 2026 and replaces
 the current map app (FunderMapsWebFront) once it does everything that app does.
 
@@ -17,8 +17,11 @@ pnpm build      # type check + production build into dist/
 - **MapLibre** draws the basemap (`tiles.fundermaps.com/style/fundermaps-basemap`, restyled light or dark), labels and
   controls. A MapLibre custom layer runs **three.js** to draw the buildings (`src/engine/scene.ts`): sun and sky light,
   crease lines, sun shadows, selection, hover.
-- **Shapes:** 3D BAG Cesium 3D Tiles (LoD 2.2) from `data.3dbag.nl`. The browser walks the 3D BAG tileset for the area
-  in view (`src/engine/bag3d-tileset.ts`) and converts the tiles in Web Workers (`src/engine/tiles.ts`).
+- **Shapes:** Cesium 3D Tiles 1.1 of PDOK 3D Basisvoorziening (Kadaster; LoD 2.2 made with roofer, the same software
+  as 3D BAG; every building carries its BAG `identificatie`). The browser walks the tileset for the area in view
+  (`src/engine/bag3d-tileset.ts`: region and box volumes, transforms down the tree) and converts the tiles in Web Workers
+  (`src/engine/tiles.ts`). 3D BAG works as well (other base URL). When the 3D source cannot be reached the map falls
+  back to **flat mode**: our own building tiles as blocks with the same colours.
 - **FunderMaps data:** our own `buildings` vector tiles (Martin) at zoom 14, where every building carries every field.
   A worker decodes only the properties (`src/data/`); they are joined to the 3D BAG features on the 16-digit BAG pand
   number.
@@ -37,8 +40,11 @@ No private data lives in this repository or the bundle.
 | `VITE_BASEMAP_STYLE` | `<tileserver>/style/fundermaps-basemap` |
 | `VITE_API_URL` | `https://api.fundermaps.com` |
 | `VITE_PDOK_LOCATIONSERVICE` | `https://api.pdok.nl/bzk/locatieserver/search/v3_1` |
-| `VITE_BAG3D_URL` | `https://data.3dbag.nl/v20250903/cesium3dtiles/lod22/` |
+| `VITE_3D_URL` | `https://api.pdok.nl/kadaster/3d-basisvoorziening/ogc/v1/collections/gebouwen/` |
+| `VITE_3D_ROOT` | `3dtiles?f=json` (3D BAG: `tileset.json`) |
+| `VITE_3D_ATTRIBUTION` | the 3D Basisvoorziening credit line |
 
 ## Attribution
 
-3D building models: [3DBAG](https://3dbag.nl) by the 3D geoinformation group of TU Delft and 3DGI, CC BY 4.0.
+3D building models: [3D Basisvoorziening](https://www.pdok.nl/introductie/-/article/3d-basisvoorziening) by Kadaster via PDOK,
+CC BY 4.0. (Alternative source: [3DBAG](https://3dbag.nl), TU Delft 3D geoinformation and 3DGI, CC BY 4.0.)

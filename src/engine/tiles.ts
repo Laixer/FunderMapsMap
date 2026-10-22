@@ -139,7 +139,24 @@ async function readProperty(parser: GLTFParser, schema: any, table: any, name: s
   return out;
 }
 
-export async function loadTile(url: string, frame: Frame, signal?: AbortSignal): Promise<LoadedTile> {
+/**
+ * Property names per source: 3D BAG (b3_*) and PDOK 3D Basisvoorziening (roofer rf_*, camelCase BAG names). The first
+ * name a tile carries wins.
+ */
+const NAMES = {
+  id: ['identificatie'],
+  roof: ['b3_dak_type', 'rf_roof_type'],
+  storeys: ['b3_bouwlagen'],
+  ridge: ['b3_h_nok', 'rf_h_roof_ridge'],
+  ground: ['b3_h_maaiveld', 'rf_h_ground'],
+  year: ['oorspronkelijkbouwjaar', 'oorspronkelijkBouwjaar'],
+  area: ['b3_opp_grond'],
+  volume: ['b3_volume_lod22', 'rf_volume_lod22'],
+  status: ['status'],
+};
+
+/** transform = the tile's 3D Tiles transform (column-major), applied after glTF y-up → z-up; null when content is in ECEF */
+export async function loadTile(url: string, frame: Frame, signal?: AbortSignal, transform: number[] | null = null): Promise<LoadedTile> {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`${res.status} ${url}`);
   const buffer = await res.arrayBuffer();
@@ -150,9 +167,12 @@ export async function loadTile(url: string, frame: Frame, signal?: AbortSignal):
   if (!table) throw new Error(`no property table in ${url}`);
   const schema = metadata.schema.classes[table.class];
   const count: number = table.count;
+  const column = async (names: string[]) => {
+    const name = names.find((n) => schema.properties[n] && table.properties[n]);
+    return name ? readProperty(parser, schema, table, name, count) : new Array(count).fill(null);
+  };
   const [ids, roof, storeys, ridge, ground, year, area, volume, status] = await Promise.all(
-    ['identificatie', 'b3_dak_type', 'b3_bouwlagen', 'b3_h_nok', 'b3_h_maaiveld', 'oorspronkelijkbouwjaar', 'b3_opp_grond', 'b3_volume_lod22', 'status']
-      .map((name) => readProperty(parser, schema, table, name, count)),
+    [NAMES.id, NAMES.roof, NAMES.storeys, NAMES.ridge, NAMES.ground, NAMES.year, NAMES.area, NAMES.volume, NAMES.status].map(column),
   );
   const features: TileFeature[] = [];
   for (let i = 0; i < count; i++) {
@@ -162,7 +182,7 @@ export async function loadTile(url: string, frame: Frame, signal?: AbortSignal):
       storeys: storeys[i] as number | null,
       ridgeHeight: ridge[i] as number | null,
       groundLevel: ground[i] as number | null,
-      builtYear: year[i] as number | null,
+      builtYear: year[i] === null ? null : Number(year[i]) || null,
       area: area[i] as number | null,
       volume: volume[i] as number | null,
       status: status[i] as string | null,
@@ -173,7 +193,7 @@ export async function loadTile(url: string, frame: Frame, signal?: AbortSignal):
   const meshes: THREE.Mesh[] = [];
   gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
 
-  const parts = meshes.map((mesh) => buildPart(mesh, frame, count));
+  const parts = meshes.map((mesh) => buildPart(mesh, frame, count, transform));
   for (const mesh of meshes) mesh.geometry.dispose();
   return { features, parts, bytes: buffer.byteLength };
 }
@@ -195,7 +215,7 @@ function positionKeys(pos: THREE.BufferAttribute | THREE.InterleavedBufferAttrib
   return keys;
 }
 
-function buildPart(mesh: THREE.Mesh, frame: Frame, featureCount: number): TilePart {
+function buildPart(mesh: THREE.Mesh, frame: Frame, featureCount: number, t: number[] | null): TilePart {
   const src = mesh.geometry;
   const pos = src.attributes.position;
   const nrm = src.attributes.normal;
@@ -218,7 +238,10 @@ function buildPart(mesh: THREE.Mesh, frame: Frame, featureCount: number): TilePa
     const gx = m[0] * x + m[4] * y + m[8] * z + m[12];
     const gy = m[1] * x + m[5] * y + m[9] * z + m[13];
     const gz = m[2] * x + m[6] * y + m[10] * z + m[14];
-    geodetic(gx, -gz, gy, g);
+    // z-up tile frame (x, -z, y), then the tile transform into ECEF when the tileset has one (PDOK: ENU at the root)
+    const lx = gx, ly = -gz, lz = gy;
+    if (t) geodetic(t[0] * lx + t[4] * ly + t[8] * lz + t[12], t[1] * lx + t[5] * ly + t[9] * lz + t[13], t[2] * lx + t[6] * ly + t[10] * lz + t[14], g);
+    else geodetic(lx, ly, lz, g);
     position[i * 3] = (mercatorX(g[0]) - frame.mx) / frame.scale;
     position[i * 3 + 1] = (mercatorY(g[1]) - frame.my) / frame.scale;
     position[i * 3 + 2] = g[2];
@@ -233,7 +256,9 @@ function buildPart(mesh: THREE.Mesh, frame: Frame, featureCount: number): TilePa
       const wx = nm[0] * a + nm[3] * b + nm[6] * c;
       const wy = nm[1] * a + nm[4] * b + nm[7] * c;
       const wz = nm[2] * a + nm[5] * b + nm[8] * c;
-      const ex = wx, ey = -wz, ez = wy; // ECEF
+      // z-up tile frame, then the transform's rotation into ECEF
+      let ex = wx, ey = -wz, ez = wy;
+      if (t) [ex, ey, ez] = [t[0] * ex + t[4] * ey + t[8] * ez, t[1] * ex + t[5] * ey + t[9] * ez, t[2] * ex + t[6] * ey + t[10] * ez];
       const e = r[0] * ex + r[1] * ey + r[2] * ez;
       const no = r[3] * ex + r[4] * ey + r[5] * ez;
       const u = r[6] * ex + r[7] * ey + r[8] * ez;

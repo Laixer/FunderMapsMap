@@ -25,13 +25,13 @@ export class TileWorkers {
   }
 
   /** returns the request id (for cancel) and the promise */
-  request(url: string, frame: Frame): { id: number; done: Promise<LoadedTile> } {
+  request(url: string, frame: Frame, transform: number[] | null = null): { id: number; done: Promise<LoadedTile> } {
     const id = this.next++;
     const i = this.load.indexOf(Math.min(...this.load));
     const worker = this.workers[i];
     this.load[i]++;
     const done = new Promise<LoadedTile>((resolve, reject) => this.pending.set(id, { resolve, reject, worker }));
-    worker.postMessage({ type: 'load', id, url, frame });
+    worker.postMessage({ type: 'load', id, url, frame, transform });
     return { id, done };
   }
 
