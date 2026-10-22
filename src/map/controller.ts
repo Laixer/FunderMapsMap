@@ -15,7 +15,7 @@ import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
 import { buildingInfo, type BuildingInfo } from '@/search/search';
 import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
-import { BAG3D, BASEMAP, TILESERVER } from '@/config';
+import { BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
 
 setWorkerUrl(maplibreWorker);
 
@@ -65,7 +65,7 @@ const NEUTRAL: Record<Mode, { noData: number; context: number }> = {
   light: { noData: 0xdcdfe4, context: 0xeeeff1 },
   dark: { noData: 0x4a525d, context: 0x2b313a },
 };
-const ATTRIBUTION = '3D-panden <a href="https://3dbag.nl" target="_blank" rel="noopener">3DBAG</a> (TU Delft 3D geoinformation, 3DGI), CC BY 4.0 · Gegevens FunderMaps';
+const ATTRIBUTION = `${BUILDINGS_3D.attribution} · Gegevens FunderMaps`;
 
 const nf = new Intl.NumberFormat('nl-NL');
 const nf1 = new Intl.NumberFormat('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -115,7 +115,7 @@ export class MapController {
   private layer: BuildingLayer;
   private workers = new TileWorkers(2);
   private data: BuildingData;
-  private tileset = new Bag3dTileset(BAG3D);
+  private tileset = new Bag3dTileset(BUILDINGS_3D.base, BUILDINGS_3D.root);
   /** the 3D BAG leaf tiles of the last walk, by uri */
   private leaves = new Map<string, LeafTile>();
   private walkSeq = 0;
@@ -275,17 +275,17 @@ export class MapController {
     }
     // a newer view change already asked again
     if (seq !== this.walkSeq) return;
-    for (const t of found) this.leaves.set(t[0], t);
+    for (const t of found) this.leaves.set(t.uri, t);
     const c = this.map.getCenter();
     const limit = tileDistance(this.map.getZoom());
     const wanted = found
-      .map((t) => ({ t, d: distanceTo(t.slice(1) as number[], c) }))
+      .map((t) => ({ t, d: distanceTo(t.bounds, c) }))
       .filter((x) => x.d < limit)
       .sort((a, b) => a.d - b.d)
       .slice(0, MAX_TILES);
     this.queue.length = 0;
-    for (const { t } of wanted) if (!this.entries.has(t[0])) this.queue.push(t[0]);
-    this.evict(new Set(wanted.map((w) => w.t[0])));
+    for (const { t } of wanted) if (!this.entries.has(t.uri)) this.queue.push(t.uri);
+    this.evict(new Set(wanted.map((w) => w.t.uri)));
     this.pump();
     this.renderStatus();
   }
@@ -310,8 +310,8 @@ export class MapController {
       const uri = this.queue.shift()!;
       const t = this.leaves.get(uri);
       if (this.entries.has(uri) || !t) continue;
-      const { done } = this.workers.request(this.tileset.base + uri, this.frame);
-      const entry: TileEntry = { uri, bounds: t.slice(1) as number[], state: 'loading' };
+      const { done } = this.workers.request(this.tileset.base + uri, this.frame, t.transform);
+      const entry: TileEntry = { uri, bounds: t.bounds, state: 'loading' };
       const layer = this.layer;
       this.entries.set(uri, entry);
       this.active++;
@@ -605,7 +605,7 @@ export class MapController {
     const panden = ready.reduce((s, e) => s + (e.view?.tile.features.length ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
-    if (this.flat) text = '3D-modellen (3DBAG) niet bereikbaar · panden als blokken';
+    if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
     else text = `${nf.format(panden)} panden in 3D · ${ready.length} tegels · ${nf1.format(mb)} MB`;

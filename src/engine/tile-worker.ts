@@ -13,7 +13,7 @@ scope.onmessage = async (e: MessageEvent) => {
   const abort = new AbortController();
   running.set(msg.id, abort);
   try {
-    const tile = await loadTile(msg.url, msg.frame, abort.signal);
+    const tile = await loadTile(msg.url, msg.frame, abort.signal, msg.transform ?? null);
     scope.postMessage({ id: msg.id, tile }, transferables(tile));
   } catch (err) {
     scope.postMessage({ id: msg.id, error: abort.signal.aborted ? 'aborted' : String(err) });
