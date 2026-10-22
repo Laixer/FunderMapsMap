@@ -1,1 +1,827 @@
-{ "monitoring" : {"name" : "Monitoring", "fields" : [{"name": "Monitoring", "color": "ce007c"}]}, "velocity" : {"name" : "Pandzakking", "fields" : [{"name": "> 0 mm/jaar", "color": "f7fbff"}, {"name": "0,0 t/m -0,5 mm/jaar", "color": "d8e7f5"}, {"name": "-0,5 t/m -1,0 mm/jaar", "color": "b0d2e8"}, {"name": "-1,0 t/m -1,5 mm/jaar", "color": "73b3d8"}, {"name": "-1,5 t/m -2,0 mm/jaar", "color": "3e8ec4"}, {"name": "-2,0 t/m -2,5 mm/jaar", "color": "1563aa"}, {"name": "< -2,5 mm/jaar", "color": "08306b"}]}, "drystand-risk" : {"name" : "Droogstand", "fields" : [{"name": "A", "color": "42FF33"}, {"name": "B", "color": "D1FF33"}, {"name": "C", "color": "FFEC33"}, {"name": "D", "color": "FFAC33"}, {"name": "E", "color": "FF5533"}]}, "dewatering-depth-risk" : {"name" : "Ontwateringsdiepte", "fields" : [{"name": "A", "color": "42FF33"}, {"name": "B", "color": "D1FF33"}, {"name": "C", "color": "FFEC33"}, {"name": "D", "color": "FFAC33"}, {"name": "E", "color": "FF5533"}]}, "damage-cause" : {"name" : "Schadeoorzaak", "fields" : [{"name": "Ontwateringsdiepte", "color": "55B5A7"}, {"name": "Overbelasting", "color": "4B8FBF"}, {"name": "Bacteriële aantasting", "color": "4145C9"}, {"name": "Schimmelaantasting", "color": "8936D4"}, {"name": "Bodemdaling", "color": "DE2CCF"}, {"name": "Planten en wortels", "color": "D2386F"}, {"name": "Aardbeving", "color": "C75D43"}, {"name": "Partieel funderingsherstel", "color": "BBA14F"}, {"name": "Constructiefout", "color": "95B05A"}, {"name": "Negatieve kleef", "color": "6EA466"}, {"name": "Onbekend", "color": "6A6C70"}]}, "unclassified-risk" : {"name" : "Op basis van onderzoek", "fields" : [{"name": "A", "color": "42FF33"}, {"name": "B", "color": "D1FF33"}, {"name": "C", "color": "FFEC33"}, {"name": "D", "color": "FFAC33"}, {"name": "E", "color": "FF5533"}]}, "restoration-cost" : {"name" : "Herstelkosten", "fields" : [{"name": "< € 25.000", "color": "ffffff"}, {"name": "€ 25.000 t/m € 50.000", "color": "f7fbff"}, {"name": "€ 50.000 t/m € 75.000", "color": "d8e7f5"}, {"name": "€ 75.000 t/m € 100.000", "color": "b0d2e8"}, {"name": "€ 100.000 t/m € 125.000", "color": "73b3d8"}, {"name": "€ 125.000 t/m € 150.000", "color": "3e8ec4"}, {"name": "€ 150.000 t/m € 175.000", "color": "1563aa"}, {"name": "€ 175.000 t/m € 200.000", "color": "08306b"}, {"name": "> € 200.000", "color": "010d1d"}]}, "overall-quality" : {"name" : "Kwaliteit", "fields" : [{"name": "Goed", "color": "96ed51"}, {"name": "Redelijk", "color": "d3e14d"}, {"name": "Matig tot goed", "color": "FFEC33"}, {"name": "Matig", "color": "c9b441"}, {"name": "Matig tot slecht", "color": "9d592d"}, {"name": "Slecht", "color": "7b2a2d"}]}, "foundation-recovery" : {"name" : "Hersteld", "fields" : [{"name": "Volledig herstel", "color": "5cbe55"}, {"name": "Partieel herstel", "color": "47baa5"}, {"name": "Paalkopverlaging", "color": "8c4bb6"}, {"name": "Grondverbetering", "color": "c67e70"}, {"name": "Onbekend", "color": "5B4AB7"}]}, "foundation-type-established" : {"name" : "Funderingstype", "fields" : [{"name": "Houten paal", "color": "8C3A28"}, {"name": "Houten paal met oplanger", "color": "B59E3C"}, {"name": "Betonnen of stalen paal", "color": "7F8FA4"}, {"name": "Ondiepe fundering", "color": "CE0015"}, {"name": "Gecombineerd", "color": "B271DE"}, {"name": "Overig", "color": "FFEC33"}]}, "foundation-type-cluster" : {"name" : "Funderingstype afgeleid", "fields" : [{"name": "Houten paal", "color": "8C3A28"}, {"name": "Houten paal met oplanger", "color": "B59E3C"}, {"name": "Betonnen of stalen paal", "color": "7F8FA4"}, {"name": "Ondiepe fundering", "color": "CE0015"}, {"name": "Gecombineerd", "color": "B271DE"}, {"name": "Overig", "color": "FFEC33"}]}, "foundation-type-indicative" : {"name" : "Funderingstype indicatief", "fields" : [{"name": "Houten paal", "color": "8C3A28"}, {"name": "Houten paal met oplanger", "color": "B59E3C"}, {"name": "Betonnen of stalen paal", "color": "7F8FA4"}, {"name": "Ondiepe fundering", "color": "CE0015"}]}, "construction-year" : {"name" : "Bouwjaar", "fields" : [{"name": "< 1960", "color": "293575"}, {"name": "1960 t/m 1970", "color": "1261A3"}, {"name": "1970 t/m 1980", "color": "69A8DE"}, {"name": "1980 t/m 1990", "color": "99C1E9"}, {"name": "1990 t/m 2000", "color": "B378B1"}, {"name": "2000 t/m 2010", "color": "bd6495"}, {"name": "2010 t/m 2020", "color": "BA2351"}, {"name": "> 2020", "color": "d11313"}]}, "enforcement-term" : {"name" : "Handhavingstermijn (jaar)", "fields" : [{"name": "> 25", "color": "64DEBC"}, {"name": "20 t/m 25", "color": "55E293"}, {"name": "15 t/m 20", "color": "46E65F"}, {"name": "10 t/m 15", "color": "4CEB36"}, {"name": "5 t/m 10", "color": "77F025"}, {"name": "0 t/m 5", "color": "AEF614"}, {"name": "0 t/m -5", "color": "D0E218"}, {"name": "-5 t/m -10", "color": "CEB31B"}, {"name": "-10 t/m -15", "color": "BB7F1E"}, {"name": "-15 t/m -20", "color": "A85520"}, {"name": "-20 t/m -25", "color": "973321"}, {"name": "< -25", "color": "86222A"}]}, "inquiry-type" : {"name" : "Rapportagetype", "fields" : [{"name": "Monitoring", "color": "B54CB0"}, {"name": "Notitie", "color": "8C4BB6"}, {"name": "QuickScan", "color": "5B4AB7"}, {"name": "Sloopgrensonderzoek", "color": "4767B8"}, {"name": "Second opinion", "color": "489BB9"}, {"name": "Archiefonderzoek", "color": "47BAA5"}, {"name": "Bouwkundig onderzoek", "color": "4EBC77"}, {"name": "Funderingsadvies", "color": "5CBE55"}, {"name": "Onderzoeksput", "color": "90C05D"}, {"name": "Funderingsonderzoek", "color": "BDC262"}, {"name": "Aanvullend onderzoek", "color": "C4A169"}, {"name": "Grondwateronderzoek", "color": "C67F71"}, {"name": "Grondonderzoek", "color": "F4A9E2"}, {"name": "Gevelscan", "color": "EC0909"}, {"name": "Onbekend", "color": "6A6C70"}]}, "bio-infection-risk" : {"name" : "Bacteriële aantasting", "fields" : [{"name": "A", "color": "42FF33"}, {"name": "B", "color": "D1FF33"}, {"name": "C", "color": "FFEC33"}, {"name": "D", "color": "FFAC33"}, {"name": "E", "color": "FF5533"}]}, "hotspot" : {"name" : "Hotspot", "fields" : [{"name": "D (Hoog risico)", "color": "FFAC33"}, {"name": "E (Aanzienlijk hoog risico)", "color": "FF5533"}]} }
+{
+ "bio-infection-risk": {
+  "name": "Bacteriële aantasting",
+  "fields": [
+   {
+    "name": "A",
+    "color": "42FF33"
+   },
+   {
+    "name": "B",
+    "color": "D1FF33"
+   },
+   {
+    "name": "C",
+    "color": "FFEC33"
+   },
+   {
+    "name": "D",
+    "color": "FFAC33"
+   },
+   {
+    "name": "E",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "building-cluster": {
+  "name": "Bouwkundige eenheid",
+  "fields": [
+   {
+    "name": "Indicatief",
+    "color": "0039D6"
+   }
+  ]
+ },
+ "construction-year": {
+  "name": "Bouwjaar",
+  "fields": [
+   {
+    "name": "< 1960",
+    "color": "293575"
+   },
+   {
+    "name": "1960 t/m 1970",
+    "color": "1261A3"
+   },
+   {
+    "name": "1970 t/m 1980",
+    "color": "69A8DE"
+   },
+   {
+    "name": "1980 t/m 1990",
+    "color": "99C1E9"
+   },
+   {
+    "name": "1990 t/m 2000",
+    "color": "B378B1"
+   },
+   {
+    "name": "2000 t/m 2010",
+    "color": "bd6495"
+   },
+   {
+    "name": "2010 t/m 2020",
+    "color": "BA2351"
+   },
+   {
+    "name": "> 2020",
+    "color": "d11313"
+   }
+  ]
+ },
+ "contractor": {
+  "name": "Uitvoerder",
+  "fields": [
+   {
+    "name": "KCAF",
+    "color": "85DBBE"
+   },
+   {
+    "name": "FunderMaps B.V.",
+    "color": "96ED51"
+   },
+   {
+    "name": "Gemeente Haarlem",
+    "color": "B59E3C"
+   },
+   {
+    "name": "Gemeente Rotterdam",
+    "color": "7EDF9A"
+   },
+   {
+    "name": "Perfectkeur",
+    "color": "BDF450"
+   },
+   {
+    "name": "Funderingsloket",
+    "color": "9D592D"
+   },
+   {
+    "name": "Elkien",
+    "color": "79E370"
+   },
+   {
+    "name": "Gemeente Dordrecht",
+    "color": "D3E14D"
+   },
+   {
+    "name": "Wareco",
+    "color": "8C3A28"
+   },
+   {
+    "name": "Gemeente Schiedam",
+    "color": "7EE587"
+   },
+   {
+    "name": "VastgoedNED",
+    "color": "C9B441"
+   },
+   {
+    "name": "Gemeente Zaanstad",
+    "color": "7B2A2D"
+   },
+   {
+    "name": "Overig",
+    "color": "6A6C70"
+   }
+  ]
+ },
+ "damage-cause": {
+  "name": "Schadeoorzaak",
+  "fields": [
+   {
+    "name": "Ontwateringsdiepte",
+    "color": "55B5A7"
+   },
+   {
+    "name": "Overbelasting",
+    "color": "4B8FBF"
+   },
+   {
+    "name": "Bacteriële aantasting",
+    "color": "4145C9"
+   },
+   {
+    "name": "Schimmelaantasting",
+    "color": "8936D4"
+   },
+   {
+    "name": "Bodemdaling",
+    "color": "DE2CCF"
+   },
+   {
+    "name": "Planten en wortels",
+    "color": "D2386F"
+   },
+   {
+    "name": "Aardbeving",
+    "color": "C75D43"
+   },
+   {
+    "name": "Partieel funderingsherstel",
+    "color": "BBA14F"
+   },
+   {
+    "name": "Constructiefout",
+    "color": "95B05A"
+   },
+   {
+    "name": "Negatieve kleef",
+    "color": "6EA466"
+   },
+   {
+    "name": "Onbekend",
+    "color": "6A6C70"
+   }
+  ]
+ },
+ "dewatering-depth-risk": {
+  "name": "Ontwateringsdiepte",
+  "fields": [
+   {
+    "name": "A",
+    "color": "42FF33"
+   },
+   {
+    "name": "B",
+    "color": "D1FF33"
+   },
+   {
+    "name": "C",
+    "color": "FFEC33"
+   },
+   {
+    "name": "D",
+    "color": "FFAC33"
+   },
+   {
+    "name": "E",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "drystand-risk": {
+  "name": "Droogstand",
+  "fields": [
+   {
+    "name": "A",
+    "color": "42FF33"
+   },
+   {
+    "name": "B",
+    "color": "D1FF33"
+   },
+   {
+    "name": "C",
+    "color": "FFEC33"
+   },
+   {
+    "name": "D",
+    "color": "FFAC33"
+   },
+   {
+    "name": "E",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "enforcement-term": {
+  "name": "Handhavingstermijn (jaar)",
+  "fields": [
+   {
+    "name": "> 25",
+    "color": "64DEBC"
+   },
+   {
+    "name": "20 t/m 25",
+    "color": "55E293"
+   },
+   {
+    "name": "15 t/m 20",
+    "color": "46E65F"
+   },
+   {
+    "name": "10 t/m 15",
+    "color": "4CEB36"
+   },
+   {
+    "name": "5 t/m 10",
+    "color": "77F025"
+   },
+   {
+    "name": "0 t/m 5",
+    "color": "AEF614"
+   },
+   {
+    "name": "0 t/m -5",
+    "color": "D0E218"
+   },
+   {
+    "name": "-5 t/m -10",
+    "color": "CEB31B"
+   },
+   {
+    "name": "-10 t/m -15",
+    "color": "BB7F1E"
+   },
+   {
+    "name": "-15 t/m -20",
+    "color": "A85520"
+   },
+   {
+    "name": "-20 t/m -25",
+    "color": "973321"
+   },
+   {
+    "name": "< -25",
+    "color": "86222A"
+   }
+  ]
+ },
+ "facade-risk": {
+  "name": "Risico pand (model)",
+  "fields": [
+   {
+    "name": "A",
+    "color": "42FF33"
+   },
+   {
+    "name": "B",
+    "color": "D1FF33"
+   },
+   {
+    "name": "C",
+    "color": "FFEC33"
+   },
+   {
+    "name": "D",
+    "color": "FFAC33"
+   },
+   {
+    "name": "E",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "facade-risk-established": {
+  "name": "Risico",
+  "fields": [
+   {
+    "name": "Laag",
+    "color": "42FF33"
+   },
+   {
+    "name": "Midden",
+    "color": "FFEC33"
+   },
+   {
+    "name": "Hoog",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "facade-type": {
+  "name": "Scheuren",
+  "fields": [
+   {
+    "name": "Geen",
+    "color": "42FF33"
+   },
+   {
+    "name": "Zeer klein",
+    "color": "D1FF33"
+   },
+   {
+    "name": "Klein",
+    "color": "FFEC33"
+   },
+   {
+    "name": "Matig",
+    "color": "FFAC33"
+   },
+   {
+    "name": "Groot",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "foundation-recovery": {
+  "name": "Hersteld",
+  "fields": [
+   {
+    "name": "Volledig herstel",
+    "color": "5cbe55"
+   },
+   {
+    "name": "Partieel herstel",
+    "color": "47baa5"
+   },
+   {
+    "name": "Paalkopverlaging",
+    "color": "8c4bb6"
+   },
+   {
+    "name": "Grondverbetering",
+    "color": "c67e70"
+   },
+   {
+    "name": "Onbekend",
+    "color": "5B4AB7"
+   }
+  ]
+ },
+ "foundation-type-cluster": {
+  "name": "Funderingstype afgeleid",
+  "fields": [
+   {
+    "name": "Houten paal",
+    "color": "8C3A28"
+   },
+   {
+    "name": "Houten paal met oplanger",
+    "color": "B59E3C"
+   },
+   {
+    "name": "Betonnen of stalen paal",
+    "color": "7F8FA4"
+   },
+   {
+    "name": "Ondiepe fundering",
+    "color": "CE0015"
+   },
+   {
+    "name": "Gecombineerd",
+    "color": "B271DE"
+   },
+   {
+    "name": "Overig",
+    "color": "FFEC33"
+   }
+  ]
+ },
+ "foundation-type-established": {
+  "name": "Funderingstype",
+  "fields": [
+   {
+    "name": "Houten paal",
+    "color": "8C3A28"
+   },
+   {
+    "name": "Houten paal met oplanger",
+    "color": "B59E3C"
+   },
+   {
+    "name": "Betonnen of stalen paal",
+    "color": "7F8FA4"
+   },
+   {
+    "name": "Ondiepe fundering",
+    "color": "CE0015"
+   },
+   {
+    "name": "Gecombineerd",
+    "color": "B271DE"
+   },
+   {
+    "name": "Overig",
+    "color": "FFEC33"
+   }
+  ]
+ },
+ "foundation-type-indicative": {
+  "name": "Funderingstype indicatief",
+  "fields": [
+   {
+    "name": "Houten paal",
+    "color": "8C3A28"
+   },
+   {
+    "name": "Houten paal met oplanger",
+    "color": "B59E3C"
+   },
+   {
+    "name": "Betonnen of stalen paal",
+    "color": "7F8FA4"
+   },
+   {
+    "name": "Ondiepe fundering",
+    "color": "CE0015"
+   }
+  ]
+ },
+ "hotspot": {
+  "name": "Hotspot",
+  "fields": [
+   {
+    "name": "D (Hoog risico)",
+    "color": "FFAC33"
+   },
+   {
+    "name": "E (Aanzienlijk hoog risico)",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "incident": {
+  "name": "Incident",
+  "fields": [
+   {
+    "name": "Incident",
+    "color": "1e3f67"
+   }
+  ]
+ },
+ "incident-district": {
+  "name": "Incident per wijk",
+  "fields": [
+   {
+    "name": "1 melding",
+    "color": "c1d4e6"
+   },
+   {
+    "name": "2 of 3 meldingen",
+    "color": "91bad6"
+   },
+   {
+    "name": "4 of 5 meldingen",
+    "color": "528aad"
+   },
+   {
+    "name": "6 t/m 9 meldingen",
+    "color": "38658a"
+   },
+   {
+    "name": "10 of meer meldingen",
+    "color": "1e3f67"
+   }
+  ]
+ },
+ "incident-municipality": {
+  "name": "Incident per gemeente",
+  "fields": [
+   {
+    "name": "1 melding",
+    "color": "c1d4e6"
+   },
+   {
+    "name": "2 of 3 meldingen",
+    "color": "91bad6"
+   },
+   {
+    "name": "4 of 5 meldingen",
+    "color": "528aad"
+   },
+   {
+    "name": "6 t/m 9 meldingen",
+    "color": "38658a"
+   },
+   {
+    "name": "10 of meer meldingen",
+    "color": "1e3f67"
+   }
+  ]
+ },
+ "incident-neighborhood": {
+  "name": "Incident per buurt",
+  "fields": [
+   {
+    "name": "1 melding",
+    "color": "c1d4e6"
+   },
+   {
+    "name": "2 of 3 meldingen",
+    "color": "91bad6"
+   },
+   {
+    "name": "4 of 5 meldingen",
+    "color": "528aad"
+   },
+   {
+    "name": "6 t/m 9 meldingen",
+    "color": "38658a"
+   },
+   {
+    "name": "10 of meer meldingen",
+    "color": "1e3f67"
+   }
+  ]
+ },
+ "inquiry-type": {
+  "name": "Rapportagetype",
+  "fields": [
+   {
+    "name": "Monitoring",
+    "color": "B54CB0"
+   },
+   {
+    "name": "Notitie",
+    "color": "8C4BB6"
+   },
+   {
+    "name": "QuickScan",
+    "color": "5B4AB7"
+   },
+   {
+    "name": "Sloopgrensonderzoek",
+    "color": "4767B8"
+   },
+   {
+    "name": "Second opinion",
+    "color": "489BB9"
+   },
+   {
+    "name": "Archiefonderzoek",
+    "color": "47BAA5"
+   },
+   {
+    "name": "Bouwkundig onderzoek",
+    "color": "4EBC77"
+   },
+   {
+    "name": "Funderingsadvies",
+    "color": "5CBE55"
+   },
+   {
+    "name": "Onderzoeksput",
+    "color": "90C05D"
+   },
+   {
+    "name": "Funderingsonderzoek",
+    "color": "BDC262"
+   },
+   {
+    "name": "Aanvullend onderzoek",
+    "color": "C4A169"
+   },
+   {
+    "name": "Grondwateronderzoek",
+    "color": "C67F71"
+   },
+   {
+    "name": "Grondonderzoek",
+    "color": "F4A9E2"
+   },
+   {
+    "name": "Gevelscan",
+    "color": "EC0909"
+   },
+   {
+    "name": "Onbekend",
+    "color": "6A6C70"
+   }
+  ]
+ },
+ "monitoring": {
+  "name": "Monitoring",
+  "fields": [
+   {
+    "name": "Monitoring",
+    "color": "ce007c"
+   }
+  ]
+ },
+ "overall-quality": {
+  "name": "Kwaliteit",
+  "fields": [
+   {
+    "name": "Goed",
+    "color": "96ed51"
+   },
+   {
+    "name": "Redelijk",
+    "color": "d3e14d"
+   },
+   {
+    "name": "Matig tot goed",
+    "color": "FFEC33"
+   },
+   {
+    "name": "Matig",
+    "color": "c9b441"
+   },
+   {
+    "name": "Matig tot slecht",
+    "color": "9d592d"
+   },
+   {
+    "name": "Slecht",
+    "color": "7b2a2d"
+   }
+  ]
+ },
+ "restoration-cost": {
+  "name": "Herstelkosten",
+  "fields": [
+   {
+    "name": "< € 25.000",
+    "color": "ffffff"
+   },
+   {
+    "name": "€ 25.000 t/m € 50.000",
+    "color": "f7fbff"
+   },
+   {
+    "name": "€ 50.000 t/m € 75.000",
+    "color": "d8e7f5"
+   },
+   {
+    "name": "€ 75.000 t/m € 100.000",
+    "color": "b0d2e8"
+   },
+   {
+    "name": "€ 100.000 t/m € 125.000",
+    "color": "73b3d8"
+   },
+   {
+    "name": "€ 125.000 t/m € 150.000",
+    "color": "3e8ec4"
+   },
+   {
+    "name": "€ 150.000 t/m € 175.000",
+    "color": "1563aa"
+   },
+   {
+    "name": "€ 175.000 t/m € 200.000",
+    "color": "08306b"
+   },
+   {
+    "name": "> € 200.000",
+    "color": "010d1d"
+   }
+  ]
+ },
+ "settlement-speed": {
+  "name": "Zakkingssnelheid",
+  "fields": [
+   {
+    "name": "Nihil",
+    "color": "42FF33"
+   },
+   {
+    "name": "Klein",
+    "color": "D1FF33"
+   },
+   {
+    "name": "Matig",
+    "color": "FFEC33"
+   },
+   {
+    "name": "Groot",
+    "color": "FFAC33"
+   },
+   {
+    "name": "Zeer groot",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "skewed-parallel": {
+  "name": "Loodmeting",
+  "fields": [
+   {
+    "name": "Nihil",
+    "color": "42FF33"
+   },
+   {
+    "name": "Klein",
+    "color": "D1FF33"
+   },
+   {
+    "name": "Matig",
+    "color": "FFEC33"
+   },
+   {
+    "name": "Groot",
+    "color": "FFAC33"
+   },
+   {
+    "name": "Zeer groot",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "skewed-perpendicular": {
+  "name": "Lintvoegmeting",
+  "fields": [
+   {
+    "name": "Nihil",
+    "color": "42FF33"
+   },
+   {
+    "name": "Klein",
+    "color": "D1FF33"
+   },
+   {
+    "name": "Matig",
+    "color": "FFEC33"
+   },
+   {
+    "name": "Groot",
+    "color": "FFAC33"
+   },
+   {
+    "name": "Zeer groot",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "unclassified-risk": {
+  "name": "Op basis van onderzoek",
+  "fields": [
+   {
+    "name": "A",
+    "color": "42FF33"
+   },
+   {
+    "name": "B",
+    "color": "D1FF33"
+   },
+   {
+    "name": "C",
+    "color": "FFEC33"
+   },
+   {
+    "name": "D",
+    "color": "FFAC33"
+   },
+   {
+    "name": "E",
+    "color": "FF5533"
+   }
+  ]
+ },
+ "velocity": {
+  "name": "Pandzakking",
+  "fields": [
+   {
+    "name": "> 0 mm/jaar",
+    "color": "f7fbff"
+   },
+   {
+    "name": "0,0 t/m -0,5 mm/jaar",
+    "color": "d8e7f5"
+   },
+   {
+    "name": "-0,5 t/m -1,0 mm/jaar",
+    "color": "b0d2e8"
+   },
+   {
+    "name": "-1,0 t/m -1,5 mm/jaar",
+    "color": "73b3d8"
+   },
+   {
+    "name": "-1,5 t/m -2,0 mm/jaar",
+    "color": "3e8ec4"
+   },
+   {
+    "name": "-2,0 t/m -2,5 mm/jaar",
+    "color": "1563aa"
+   },
+   {
+    "name": "< -2,5 mm/jaar",
+    "color": "08306b"
+   }
+  ]
+ }
+}

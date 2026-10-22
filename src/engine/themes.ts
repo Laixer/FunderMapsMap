@@ -25,11 +25,13 @@ export interface Theme {
   layers: string[];
   sections?: Section[];
   note?: string;
+  /** an area layer (src/config/area-layers.json) drawn on the ground instead of colouring buildings */
+  area?: string;
 }
 
 const FOUNDATION_TYPES = ['foundation-type-established', 'foundation-type-cluster', 'foundation-type-indicative'];
 
-export const GROUPS = ['Fundering', 'Pand', 'Risico', 'Rapportage'];
+export const GROUPS = ['Fundering', 'Pand', 'Risico', 'Rapportage', 'Gevelscan', 'Meldingen'];
 
 export const THEMES: Theme[] = [
   {
@@ -58,6 +60,19 @@ export const THEMES: Theme[] = [
   { id: 'overall-quality', group: 'Rapportage', name: 'Kwaliteit', layers: ['overall-quality'] },
   { id: 'enforcement-term', group: 'Rapportage', name: 'Handhavingstermijn', layers: ['enforcement-term'] },
   { id: 'monitoring', group: 'Rapportage', name: 'Monitoring', layers: ['monitoring'] },
+  { id: 'contractor', group: 'Rapportage', name: 'Uitvoerder', layers: ['contractor'] },
+  // Gevelscan (Verkennend Funderingsonderzoek, facade_scan tiles). skewed-parallel reads skewed_perpendicular_facade and
+  // the other way round, exactly as in the current map app (its legends: Loodmeting / Lintvoegmeting) — question open.
+  { id: 'facade-risk-established', group: 'Gevelscan', name: 'Risico', layers: ['facade-risk-established'] },
+  { id: 'facade-risk', group: 'Gevelscan', name: 'Risico pand (model)', layers: ['facade-risk'] },
+  { id: 'facade-type', group: 'Gevelscan', name: 'Scheuren', layers: ['facade-type'] },
+  { id: 'skewed-parallel', group: 'Gevelscan', name: 'Loodmeting', layers: ['skewed-parallel'] },
+  { id: 'skewed-perpendicular', group: 'Gevelscan', name: 'Lintvoegmeting', layers: ['skewed-perpendicular'] },
+  // Meldingen: the buildings with a melding, and the counts per buurt, wijk and gemeente as areas on the ground
+  { id: 'incident', group: 'Meldingen', name: 'Panden met een melding', layers: ['incident'] },
+  { id: 'incident-neighborhood', group: 'Meldingen', name: 'Per buurt', layers: [], area: 'incident-neighborhood' },
+  { id: 'incident-district', group: 'Meldingen', name: 'Per wijk', layers: [], area: 'incident-district' },
+  { id: 'incident-municipality', group: 'Meldingen', name: 'Per gemeente', layers: [], area: 'incident-municipality' },
 ];
 
 /** packed 0xRRGGBB, or -1 when no layer of the theme draws the building */
@@ -123,17 +138,27 @@ export function legendRange(name: string): [number, number, boolean, boolean] | 
 }
 
 /** a layer's filter and colour as MapLibre expressions (in the chosen palette): the flat map draws them as they are */
-export function layerStyle(id: string, palette: PaletteName): { filter: unknown; color: unknown } {
+export function layerStyle(id: string, palette: PaletteName): { filter: unknown; color: unknown; source: string } {
   const rule = (RULES as Record<string, any>)[id];
   const map = remap(id, legendOf(id).fields, palette);
-  return { filter: rule.filter, color: map ? recolorExpression(rule.color, map) : rule.color };
+  // on its own tiles a layer draws as in the current map app: its own source and its original filter
+  return { filter: rule.sourceFilter, color: map ? recolorExpression(rule.color, map) : rule.color, source: rule.source };
 }
 
 /** legend colours of a theme's first section, for the little colour strip next to its name */
 export function legendColors(theme: Theme, palette: PaletteName): number[] {
+  if (theme.area) return legendRows(theme.area).map((r) => r.color);
   const id = theme.sections?.[0].legend ?? theme.layers[0];
   return compile(id, palette).legend.map((r) => r.color);
 }
+
+/** the database legend of any layer (also the area layers, which colour no buildings): name + colour per row */
+export function legendRows(id: string): { name: string; color: number }[] {
+  return (legendOf(id)?.fields ?? []).map((r) => ({ name: r.name, color: parseColor('#' + r.color.replace('#', '')) ?? 0x888888 }));
+}
+
+/** the title of a layer's database legend */
+export const legendTitle = (id: string) => legendOf(id)?.name ?? id;
 
 export interface LegendRow { name: string; color: number; count: number }
 export interface LegendSection { title: string; rows: LegendRow[]; other: number }

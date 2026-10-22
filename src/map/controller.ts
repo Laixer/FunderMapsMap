@@ -9,7 +9,8 @@ import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
 import { TileWorkers } from '@/engine/workers';
 import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
 import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
-import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, type Theme, type ThemeResult } from '@/engine/themes';
+import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, type Theme, type ThemeResult } from '@/engine/themes';
+import AREA_LAYERS from '@/config/area-layers.json';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
@@ -31,6 +32,8 @@ export interface UiState {
   lines: boolean;
   shadows: boolean;
   context: boolean;
+  /** the building-block outlines ("Bouwkundige eenheid") on the ground */
+  clusters: boolean;
   legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string };
   status: { text: string; busy: boolean };
   tooltip: null | { x: number; y: number; title: string; more: string; swatch: string; valueTitle: string; valueLabel: string; facts: [string, string][] };
@@ -47,7 +50,7 @@ export function initialUi(): UiState {
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true,
+    lines: false, shadows: true, context: true, clusters: false,
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -390,12 +393,43 @@ export class MapController {
   }
 
   private applyTheme(animate = true) {
-    this.result = this.data.buildings.length ? evaluateTheme(this.theme, this.data.buildings, this.ui.palette) : null;
+    // an area theme colours no buildings (they stay neutral) and draws its layer on the ground
+    this.result = this.data.buildings.length && !this.theme.area ? evaluateTheme(this.theme, this.data.buildings, this.ui.palette) : null;
     this.renderLayers();
     this.renderLegend();
     this.repaintAll(animate);
+    this.renderArea();
     this.renderFlat();
     this.renderInfo();
+  }
+
+  // ---- ground layers (areas, building blocks) ----------------------------------------------------------------------------
+  /** a vector source on our tileserver by name, added once ('buildings' is the flat-mode source 'fm') */
+  private sourceFor(name: string): string {
+    if (name === 'buildings') return 'fm';
+    const id = `fm-${name}`;
+    if (!this.map.getSource(id)) this.map.addSource(id, { type: 'vector', url: `${TILESERVER}/${name}` });
+    return id;
+  }
+
+  /** one of the current map app's own layers (area-layers.json) on the ground, under the 3D buildings */
+  private addGround(layerId: string, id: string) {
+    const spec = (AREA_LAYERS as Record<string, any>)[layerId];
+    if (!spec || !this.map.getLayer(this.layer.id)) return;
+    // the current map app keeps its layers hidden until a user turns them on: here they are on when added
+    this.map.addLayer({ ...spec, id, source: this.sourceFor(spec.source), layout: { ...spec.layout, visibility: 'visible' } }, this.layer.id);
+  }
+
+  private renderArea() {
+    if (!this.map.getSource('fm')) return;
+    if (this.map.getLayer('fm-area')) this.map.removeLayer('fm-area');
+    if (this.theme.area) this.addGround(this.theme.area, 'fm-area');
+  }
+
+  setClusters(on: boolean) {
+    this.ui.clusters = on;
+    if (this.map.getLayer('fm-cluster')) this.map.removeLayer('fm-cluster');
+    if (on) this.addGround('building-cluster', 'fm-cluster');
   }
 
   // ---- flat mode --------------------------------------------------------------------------------------------------------
@@ -415,12 +449,14 @@ export class MapController {
     this.flatLayers = [];
     if (!this.flat) return;
     // "Omgeving": every building no layer of the theme draws, in the neutral grey of the 3D view (never under a
-    // coloured block, so the two never fight over the same walls)
-    const filters = this.theme.layers.map((rule) => layerStyle(rule, this.ui.palette).filter ?? true);
+    // coloured block, so the two never fight over the same walls). Layers on other sources (facade scan, incidents) are
+    // drawn on their own tiles, so the grey cannot exclude their buildings: there the coloured blocks sit just above it.
+    const styles = this.theme.layers.map((rule) => ({ rule, ...layerStyle(rule, this.ui.palette) }));
+    const filters = styles.filter((s) => s.source === 'buildings').map((s) => s.filter ?? true);
     if (this.ui.context && !filters.includes(true)) {
       this.map.addLayer({
         id: 'fm-flat-context', type: 'fill-extrusion', source: 'fm', 'source-layer': 'buildings', minzoom: 13,
-        filter: ['!', ['any', ...filters]] as any,
+        ...(filters.length ? { filter: ['!', ['any', ...filters]] as any } : {}),
         paint: {
           'fill-extrusion-color': toHex(NEUTRAL[this.ui.mode].noData),
           'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
@@ -430,15 +466,16 @@ export class MapController {
       }, 'fm-flat-selected');
       this.flatLayers.push('fm-flat-context');
     }
-    for (const rule of [...this.theme.layers].reverse()) {
-      const { filter, color } = layerStyle(rule, this.ui.palette);
+    for (const { rule, filter, color, source } of [...styles].reverse()) {
       const id = `fm-flat-${rule}`;
+      const own = source !== 'buildings';
       this.map.addLayer({
-        id, type: 'fill-extrusion', source: 'fm', 'source-layer': 'buildings', minzoom: 13,
+        id, type: 'fill-extrusion', source: this.sourceFor(source), 'source-layer': source, minzoom: 13,
         ...(filter ? { filter: filter as any } : {}),
         paint: {
           'fill-extrusion-color': color as any,
-          'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
+          // a few centimetres higher than the grey context blocks, which share these buildings' walls
+          'fill-extrusion-height': ['+', ['coalesce', ['get', 'height'], 8], own ? 0.05 : 0],
           'fill-extrusion-base': 0,
           'fill-extrusion-opacity': 0.92,
         },
@@ -451,7 +488,10 @@ export class MapController {
   private flatAt(x: number, y: number): Props | null {
     if (!this.flatLayers.length) return null;
     const f = this.map.queryRenderedFeatures([x, y], { layers: this.flatLayers })[0];
-    return f ? (f.properties as Props) : null;
+    if (!f) return null;
+    // the pand id is building_id on buildings, external_id on facade_scan, id on incident
+    const p = f.properties as Props;
+    return { ...p, building_id: p.building_id ?? p.external_id ?? p.id };
   }
 
   private selectFlat(sel: { id: string; props: Props } | null) {
@@ -583,6 +623,14 @@ export class MapController {
     const legendUi = this.ui.legend;
     legendUi.title = this.theme.name;
     legendUi.note = this.theme.note ?? '';
+    if (this.theme.area) {
+      // an area layer: the database legend, no counts (it counts meldingen per area, not buildings)
+      legendUi.total = '';
+      legendUi.message = '';
+      legendUi.note = this.theme.note ?? `${legendTitle(this.theme.area)}, zichtbaar tot zoomniveau 14.`;
+      legendUi.sections = [{ title: '', rows: legendRows(this.theme.area).map((r) => ({ color: toHex(r.color), name: r.name, count: '', width: 0, empty: false })) }];
+      return;
+    }
     if (!this.result) {
       legendUi.total = '';
       legendUi.sections = [];

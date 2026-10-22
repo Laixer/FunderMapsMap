@@ -35,6 +35,14 @@ const P2026: Record<string, Record<string, string> | string[]> = {
   'enforcement-term': ['#0F7B5F', '#1F9573', '#36AE86', '#62C49B', '#97D8B5', '#CBEBD3', '#FBE3C2', '#F6C08E', '#EF9A62',
     '#E2713F', '#C64B31', '#9C2B26'],
   monitoring: ['#D6409F'],
+  contractor: CATEGORICAL,
+  // facade scan: rows run from good to bad, like the risk classes
+  'facade-risk': RISK,
+  'facade-risk-established': [RISK[0], RISK[2], RISK[4]],
+  'facade-type': RISK,
+  'skewed-parallel': RISK,
+  'skewed-perpendicular': RISK,
+  incident: ['#D6409F'],
 };
 
 /** packed 0xRRGGBB from '#rgb', '#rrggbb', 'rgb()/rgba()', 'hsl()/hsla()'; null for anything else (property names, enum values) */

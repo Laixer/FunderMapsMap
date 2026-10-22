@@ -54,6 +54,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
         <div class="switches">
           <label class="switch"><input type="checkbox" :checked="ui.shadows" @change="ctl.setShadows(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Schaduwen</label>
           <label class="switch"><input type="checkbox" :checked="ui.context" @change="ctl.setContext(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Omgeving</label>
+          <label class="switch"><input type="checkbox" :checked="ui.clusters" @change="ctl.setClusters(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bouwkundige eenheid</label>
           <label class="switch"><input type="checkbox" :checked="ui.palette === '2026'" @change="onPalette"><span class="knob"></span>Kleuren 2026</label>
         </div>
         <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien.</p>
@@ -71,7 +72,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
 h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .titles p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .body { overflow: auto; padding: 0 14px 14px; scrollbar-width: thin; }
-.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); margin: 2px 0 10px; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); margin: 2px 0 10px; }
 .tabs button { border: 0; padding: 6px 4px; border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 12.5px; font-weight: 550; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
 .tabs button[aria-selected="true"] { background: var(--surface-strong); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .layers { display: grid; gap: 2px; margin-bottom: 12px; }
