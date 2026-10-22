@@ -1,0 +1,110 @@
+{
+ "building-cluster": {
+  "id": "building-cluster",
+  "type": "line",
+  "source": "building_cluster",
+  "source-layer": "building_cluster",
+  "layout": {
+   "visibility": "none"
+  },
+  "paint": {
+   "line-color": "#0039d6"
+  }
+ },
+ "incident-district": {
+  "id": "incident-district",
+  "type": "fill",
+  "source": "incident_district",
+  "source-layer": "incident_district",
+  "minzoom": 10,
+  "maxzoom": 14,
+  "layout": {
+   "visibility": "none"
+  },
+  "paint": {
+   "fill-color": [
+    "interpolate",
+    [
+     "linear"
+    ],
+    [
+     "get",
+     "incident_count"
+    ],
+    1,
+    "#c1d4e6",
+    3,
+    "#91bad6",
+    5,
+    "hsl(203, 36%, 50%)",
+    10,
+    "hsl(213, 55%, 26%)"
+   ],
+   "fill-outline-color": "#ffffff"
+  }
+ },
+ "incident-municipality": {
+  "id": "incident-municipality",
+  "type": "fill",
+  "source": "incident_municipality",
+  "source-layer": "incident_municipality",
+  "minzoom": 7,
+  "maxzoom": 14,
+  "layout": {
+   "visibility": "none"
+  },
+  "paint": {
+   "fill-color": [
+    "interpolate",
+    [
+     "linear"
+    ],
+    [
+     "get",
+     "incident_count"
+    ],
+    1,
+    "#c1d4e6",
+    3,
+    "#91bad6",
+    5,
+    "hsl(203, 36%, 50%)",
+    10,
+    "hsl(213, 55%, 26%)"
+   ],
+   "fill-outline-color": "#ffffff"
+  }
+ },
+ "incident-neighborhood": {
+  "id": "incident-neighborhood",
+  "type": "fill",
+  "source": "incident_neighborhood",
+  "source-layer": "incident_neighborhood",
+  "minzoom": 10,
+  "maxzoom": 14,
+  "layout": {
+   "visibility": "none"
+  },
+  "paint": {
+   "fill-color": [
+    "interpolate",
+    [
+     "linear"
+    ],
+    [
+     "get",
+     "incident_count"
+    ],
+    1,
+    "#c1d4e6",
+    3,
+    "#91bad6",
+    5,
+    "hsl(203, 36%, 50%)",
+    10,
+    "hsl(213, 55%, 26%)"
+   ],
+   "fill-outline-color": "#ffffff"
+  }
+ }
+}

@@ -1,4 +1,5 @@
-// FunderMaps data for the buildings around the view, from our `buildings` vector tiles at zoom 14 (Martin). Keeps the
+// FunderMaps data for the buildings around the view, from our per-building vector tiles at zoom 14 (Martin: buildings,
+// facade_scan, incident, merged per pand in data-worker.ts). Keeps the
 // tiles around the view (bounded, farthest dropped first) and offers one flat list + an index by pand number, which the
 // map joins to the 3D BAG features. This replaces the prototype's per-city export files: it works for the whole country.
 import type { DataReply, Props } from './data-worker';
@@ -69,7 +70,7 @@ export class BuildingData {
     const id = this.next++;
     this.tiles.set(key, { key, x, y, state: 'loading', buildings: [] });
     this.pending.set(id, key);
-    this.workers[this.turn++ % this.workers.length].postMessage({ id, url: `${this.base}/buildings/${Z}/${x}/${y}` });
+    this.workers[this.turn++ % this.workers.length].postMessage({ id, base: this.base, z: Z, x, y });
   }
 
   private receive(reply: DataReply) {
