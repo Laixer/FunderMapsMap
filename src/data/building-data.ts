@@ -25,12 +25,16 @@ export class BuildingData {
   /** every building of the loaded tiles once (a building on a tile edge sits in both tiles) */
   buildings: Props[] = [];
   index = new Map<string, number>();
+  /** pand numbers the fence left out */
+  outside = new Set<string>();
   private tiles = new Map<string, DataTile>();
   private workers: Worker[];
   private pending = new Map<number, string>();
   private next = 1;
   private turn = 0;
   private rebuildTimer = 0;
+  /** the open mapset's fence: buildings outside it are left out, so they show and count as without data */
+  private inside: ((p: Props) => boolean) | null = null;
 
   constructor(private base: string, private onChange: () => void) {
     this.workers = Array.from({ length: 2 }, () => new Worker(new URL('./data-worker.ts', import.meta.url), { type: 'module' }));
@@ -97,6 +101,12 @@ export class BuildingData {
     this.scheduleRebuild();
   }
 
+  setFence(inside: ((p: Props) => boolean) | null) {
+    this.inside = inside;
+    this.rebuild();
+    this.onChange();
+  }
+
   /** one rebuild for a burst of arriving tiles */
   private scheduleRebuild() {
     if (this.rebuildTimer) return;
@@ -110,15 +120,18 @@ export class BuildingData {
   private rebuild() {
     const buildings: Props[] = [];
     const index = new Map<string, number>();
+    const outside = new Set<string>();
     for (const t of this.tiles.values()) {
       for (const b of t.buildings) {
         const id = String(b.id);
         if (index.has(id)) continue;
+        if (this.inside && !this.inside(b)) { outside.add(id); continue; }
         index.set(id, buildings.length);
         buildings.push(b);
       }
     }
     this.buildings = buildings;
     this.index = index;
+    this.outside = outside;
   }
 }
