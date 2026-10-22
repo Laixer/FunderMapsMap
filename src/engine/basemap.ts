@@ -33,49 +33,70 @@ export const LOOKS: Record<Mode, Look> = {
   },
 };
 
+/** basemap layers the map does without: the old map's own buildings and boundaries, house numbers, shields, … */
 const HIDDEN = /^(building|housenumber|airport|boundary_|fundermaps-|highway-shield|road_shield|landcover_ice|landcover_glacier)/;
 
-export function restyle(map: MapLibreMap, mode: Mode) {
+type Paint = [layer: string, property: string, value: unknown];
+
+/** the paint changes of one look, for the basemap layers of the style (our own layers are left alone) */
+function paints(layers: { id: string; type: string }[], mode: Mode): Paint[] {
   const l = LOOKS[mode];
-  const paint = (id: string, prop: string, value: unknown) => map.setPaintProperty(id, prop as any, value as any);
-  for (const layer of map.getStyle().layers) {
-    const { id, type } = layer;
-    if (id.startsWith('city-') || id === 'bag3d') continue;
-    if (HIDDEN.test(id)) { map.setLayoutProperty(id, 'visibility', 'none'); continue; }
-    if (type === 'background') paint(id, 'background-color', l.bg);
-    else if (id === 'water') paint(id, 'fill-color', l.water);
-    else if (id === 'waterway') paint(id, 'line-color', l.water);
-    else if (id === 'park') { paint(id, 'fill-color', l.park); paint(id, 'fill-opacity', 0.9); }
-    else if (id === 'landcover_wood') paint(id, 'fill-color', l.wood);
-    else if (id === 'landuse_residential') { paint(id, 'fill-color', l.land); paint(id, 'fill-opacity', 0.7); }
-    else if (id.startsWith('aeroway')) paint(id, type === 'fill' ? 'fill-color' : 'line-color', l.aeroway);
-    else if (id.startsWith('railway')) paint(id, 'line-color', id.endsWith('dashline') ? l.bg : l.rail);
-    else if (id.endsWith('_casing')) paint(id, 'line-color', l.casing);
-    else if (id === 'road_area_pier') paint(id, 'fill-color', l.roadMinor);
+  const out: Paint[] = [];
+  for (const { id, type } of layers) {
+    if (HIDDEN.test(id) || id === 'bag3d' || id.startsWith('fm-') || id === 'selection-ring') continue;
+    if (type === 'background') out.push([id, 'background-color', l.bg]);
+    else if (id === 'water') out.push([id, 'fill-color', l.water]);
+    else if (id === 'waterway') out.push([id, 'line-color', l.water]);
+    else if (id === 'park') out.push([id, 'fill-color', l.park], [id, 'fill-opacity', 0.9]);
+    else if (id === 'landcover_wood') out.push([id, 'fill-color', l.wood]);
+    else if (id === 'landuse_residential') out.push([id, 'fill-color', l.land], [id, 'fill-opacity', 0.7]);
+    else if (id.startsWith('aeroway')) out.push([id, type === 'fill' ? 'fill-color' : 'line-color', l.aeroway]);
+    else if (id.startsWith('railway')) out.push([id, 'line-color', id.endsWith('dashline') ? l.bg : l.rail]);
+    else if (id.endsWith('_casing')) out.push([id, 'line-color', l.casing]);
+    else if (id === 'road_area_pier') out.push([id, 'fill-color', l.roadMinor]);
     else if (/^(highway_|tunnel_|road_)/.test(id) && type === 'line') {
-      paint(id, 'line-color', /minor|path|pier|subtle/.test(id) ? l.roadMinor : l.road);
-      paint(id, 'line-opacity', 1);
+      out.push([id, 'line-color', /minor|path|pier|subtle/.test(id) ? l.roadMinor : l.road], [id, 'line-opacity', 1]);
     } else if (type === 'symbol') {
       const water = /water/.test(id);
-      paint(id, 'text-color', water ? l.waterLabel : id.startsWith('label_') ? l.place : l.label);
-      paint(id, 'text-halo-color', l.halo);
-      paint(id, 'text-halo-width', 1.4);
-      paint(id, 'text-halo-blur', 0.4);
+      out.push(
+        [id, 'text-color', water ? l.waterLabel : id.startsWith('label_') ? l.place : l.label],
+        [id, 'text-halo-color', l.halo], [id, 'text-halo-width', 1.4], [id, 'text-halo-blur', 0.4],
+      );
     }
   }
-  if (map.getLayer('city-mask')) {
-    paint('city-mask', 'fill-color', l.mask);
-    paint('city-mask', 'fill-opacity', l.maskOpacity);
-    paint('city-glow', 'line-color', l.accent);
-    paint('city-line', 'line-color', l.accent);
+  return out;
+}
+
+function sky(mode: Mode) {
+  const l = LOOKS[mode];
+  return {
+    'sky-color': l.sky, 'horizon-color': l.horizon, 'fog-color': l.horizon,
+    'sky-horizon-blend': 0.7, 'horizon-fog-blend': 0.6, 'fog-ground-blend': 0.7, 'atmosphere-blend': 0,
+  };
+}
+
+/**
+ * The basemap style as the map should first draw it: the hidden layers and the sources only they used are gone and the
+ * look is applied, so the original basemap (with the old map's buildings and lines) never shows while the map loads.
+ */
+export function prepareStyle(style: any, mode: Mode): any {
+  const out = structuredClone(style);
+  out.layers = out.layers.filter((l: { id: string }) => !HIDDEN.test(l.id));
+  const used = new Set(out.layers.map((l: { source?: string }) => l.source).filter(Boolean));
+  for (const name of Object.keys(out.sources)) if (!used.has(name)) delete out.sources[name];
+  const byId = new Map<string, any>(out.layers.map((l: { id: string }) => [l.id, l]));
+  for (const [id, prop, value] of paints(out.layers, mode)) {
+    const layer = byId.get(id);
+    (layer.paint ??= {})[prop] = value;
   }
-  map.setSky({
-    'sky-color': l.sky,
-    'horizon-color': l.horizon,
-    'fog-color': l.horizon,
-    'sky-horizon-blend': 0.7,
-    'horizon-fog-blend': 0.6,
-    'fog-ground-blend': 0.7,
-    'atmosphere-blend': 0,
-  });
+  out.sky = sky(mode);
+  return out;
+}
+
+/** switch a running map to the other look (the light/dark button) */
+export function restyle(map: MapLibreMap, mode: Mode) {
+  const layers = map.getStyle().layers;
+  for (const { id } of layers) if (HIDDEN.test(id)) map.setLayoutProperty(id, 'visibility', 'none');
+  for (const [id, prop, value] of paints(layers, mode)) map.setPaintProperty(id, prop as any, value as any);
+  map.setSky(sky(mode));
 }

@@ -8,7 +8,7 @@ import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
 import { TileWorkers } from '@/engine/workers';
 import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
-import { restyle, LOOKS } from '@/engine/basemap';
+import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
 import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, type Theme, type ThemeResult } from '@/engine/themes';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
@@ -45,7 +45,9 @@ export function initialUi(): UiState {
     mode: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
     palette: store.get('fm-palette') === 'current' ? 'current' : '2026',
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
-    lines: store.get('fm-lines') !== 'off', shadows: true, context: true,
+    // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
+    // and hovered building keep theirs
+    lines: false, shadows: true, context: true,
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -144,14 +146,24 @@ export class MapController {
   private flatLayers: string[] = [];
   private flatSelected: { id: string; props: Props } | null = null;
 
-  constructor(container: HTMLElement, private ui: UiState) {
+  /** start the map on the basemap already restyled, so the original basemap never shows while it loads */
+  static async create(container: HTMLElement, ui: UiState): Promise<MapController> {
+    let style: any = BASEMAP;
+    try {
+      const res = await fetch(BASEMAP);
+      if (res.ok) style = prepareStyle(await res.json(), ui.mode);
+    } catch { /* the plain style URL then; it is restyled once loaded */ }
+    return new MapController(container, ui, style);
+  }
+
+  private constructor(container: HTMLElement, private ui: UiState, style: any) {
     const intro = location.hash.length <= 1;
     this.frame = makeFrame(START.center[0], START.center[1]);
     this.layer = new BuildingLayer(this.frame);
     this.data = new BuildingData(TILESERVER, () => this.onData());
     this.map = new MapLibreMap({
       container,
-      style: BASEMAP,
+      style,
       center: START.center,
       zoom: intro ? 15.1 : START.zoom,
       pitch: intro ? 38 : START.pitch,
@@ -525,13 +537,6 @@ export class MapController {
     this.theme = THEMES.find((t) => t.id === id)!;
     this.ui.themeId = id;
     this.applyTheme();
-  }
-
-  setLines(on: boolean) {
-    this.ui.lines = on;
-    this.layer.lines = on;
-    store.set('fm-lines', on ? 'on' : 'off');
-    this.map.triggerRepaint();
   }
 
   setShadows(on: boolean) {
