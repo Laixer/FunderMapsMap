@@ -52,7 +52,6 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
       </section>
       <section class="settings">
         <div class="switches">
-          <label class="switch"><input type="checkbox" :checked="ui.lines" @change="ctl.setLines(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Lijnen</label>
           <label class="switch"><input type="checkbox" :checked="ui.shadows" @change="ctl.setShadows(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Schaduwen</label>
           <label class="switch"><input type="checkbox" :checked="ui.context" @change="ctl.setContext(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Omgeving</label>
           <label class="switch"><input type="checkbox" :checked="ui.palette === '2026'" @change="onPalette"><span class="knob"></span>Kleuren 2026</label>

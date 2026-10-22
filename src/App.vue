@@ -11,8 +11,8 @@ const ui = reactive(initialUi());
 const mapEl = ref<HTMLElement>();
 const ctl = shallowRef<MapController>();
 
-onMounted(() => {
-  ctl.value = new MapController(mapEl.value!, ui);
+onMounted(async () => {
+  ctl.value = await MapController.create(mapEl.value!, ui);
 });
 </script>
 
