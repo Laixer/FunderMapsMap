@@ -9,12 +9,15 @@ import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
 import { TileWorkers } from '@/engine/workers';
 import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
 import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
-import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, type Theme, type ThemeResult } from '@/engine/themes';
+import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, type Theme, type ThemeResult } from '@/engine/themes';
 import AREA_LAYERS from '@/config/area-layers.json';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
 import { buildingInfo, type BuildingInfo } from '@/search/search';
+import { fenceExpression, fenceTest, loadPublicMapset, type Mapset } from '@/map/mapsets';
+import { parseRoute, writeRoute, type Route } from '@/map/route';
+import { markdown } from '@/lib/markdown';
 import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
 import { BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
 
@@ -34,6 +37,10 @@ export interface UiState {
   context: boolean;
   /** the building-block outlines ("Bouwkundige eenheid") on the ground */
   clusters: boolean;
+  /** the open mapset (/map/<slug>): its name, note and disclaimer as HTML */
+  mapset: null | { id: string; name: string; note: string; consent: string };
+  /** a message above the layers, e.g. a mapset in the address that could not be opened */
+  notice: string;
   legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string };
   status: { text: string; busy: boolean };
   tooltip: null | { x: number; y: number; title: string; more: string; swatch: string; valueTitle: string; valueLabel: string; facts: [string, string][] };
@@ -50,7 +57,7 @@ export function initialUi(): UiState {
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true, clusters: false,
+    lines: false, shadows: true, context: true, clusters: false, mapset: null, notice: '',
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -130,7 +137,14 @@ export class MapController {
   private entryOfView = new Map<TileView, TileEntry>();
   private queue: string[] = [];
   private active = 0;
+  /** the tabs and their layers: every layer by subject, or the layer set of the open mapset */
+  private catalog: { groups: string[]; themes: Theme[] } = { groups: GROUPS, themes: THEMES };
   private theme: Theme = THEMES[0];
+  private mapset: Mapset | null = null;
+  /** the open mapset's fence as a MapLibre filter (flat mode) */
+  private fence: unknown[] | null = null;
+  /** the mapset, building and panel in the address */
+  private route: Route;
   private result: ThemeResult | null = null;
   private selected: Hit | null = null;
   private hovered: Hit | null = null;
@@ -149,28 +163,42 @@ export class MapController {
   private flatLayers: string[] = [];
   private flatSelected: { id: string; props: Props } | null = null;
 
-  /** start the map on the basemap already restyled, so the original basemap never shows while it loads */
-  static async create(container: HTMLElement, ui: UiState): Promise<MapController> {
-    let style: any = BASEMAP;
-    try {
-      const res = await fetch(BASEMAP);
-      if (res.ok) style = prepareStyle(await res.json(), ui.mode);
-    } catch { /* the plain style URL then; it is restyled once loaded */ }
-    return new MapController(container, ui, style);
+  /**
+   * Start the map on the basemap already restyled, so the original basemap never shows while it loads. A mapset and a
+   * building in the address are looked up at the same time, so the map opens on them.
+   */
+  static async create(container: HTMLElement, ui: UiState, route: Route): Promise<MapController> {
+    const style = fetch(BASEMAP)
+      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then((json) => prepareStyle(json, ui.mode))
+      .catch(() => BASEMAP as any); // the plain style URL then; it is restyled once loaded
+    const mapset = route.mapset ? loadPublicMapset(route.mapset, AbortSignal.timeout(8000)).catch(() => null) : null;
+    const target = route.building ? locate(route.building, AbortSignal.timeout(8000)) : null;
+    const [s, m, t] = await Promise.all([style, mapset, target]);
+    if (route.mapset && !m) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet openbaar. U ziet alle lagen.`;
+    return new MapController(container, ui, s, route, m, t);
   }
 
-  private constructor(container: HTMLElement, private ui: UiState, style: any) {
+  private constructor(container: HTMLElement, private ui: UiState, style: any, route: Route, mapset: Mapset | null,
+    target: { pand: string; lon: number; lat: number } | null) {
     const intro = location.hash.length <= 1;
-    this.frame = makeFrame(START.center[0], START.center[1]);
+    // where to open (the hash, when there is one, wins inside MapLibre): the building, ?lat&lng, the mapset, Rotterdam
+    const start = target ? { ...START, center: [target.lon, target.lat] as [number, number], zoom: 17.4, pitch: 60 }
+      : route.lat !== null && route.lng !== null ? { ...START, center: [route.lng, route.lat] as [number, number], zoom: 17, pitch: 60 }
+      : mapset?.center ? { ...START, center: mapset.center, zoom: 15, pitch: 58 }
+      : START;
+    this.route = { ...route, building: target?.pand ?? route.building };
+    this.pendingSelect = target?.pand ?? null;
+    this.frame = makeFrame(start.center[0], start.center[1]);
     this.layer = new BuildingLayer(this.frame);
     this.data = new BuildingData(TILESERVER, () => this.onData());
     this.map = new MapLibreMap({
       container,
       style,
-      center: START.center,
-      zoom: intro ? 15.1 : START.zoom,
-      pitch: intro ? 38 : START.pitch,
-      bearing: intro ? -6 : START.bearing,
+      center: start.center,
+      zoom: intro ? start.zoom - 0.4 : start.zoom,
+      pitch: intro ? 38 : start.pitch,
+      bearing: intro ? start.bearing - 78 : start.bearing,
       maxPitch: 78,
       hash: true,
       canvasContextAttributes: { antialias: true },
@@ -180,8 +208,12 @@ export class MapController {
     this.map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), 'top-right');
     this.map.addControl(new ScaleControl({ maxWidth: 110 }), 'bottom-right');
     this.layer.lines = ui.lines;
-    this.renderLayers();
-    this.renderLegend();
+    if (mapset) this.setMapset(mapset);
+    else { this.renderLayers(); this.renderLegend(); }
+    // the address follows the map from here: canonical form (old /kaart/… and …/gebouw/… links), Back and Forward. An
+    // address naming a mapset that did not open is left as it was.
+    if (!route.mapset || mapset) writeRoute(this.route, false);
+    addEventListener('popstate', () => this.followRoute(parseRoute()));
 
     this.map.on('load', () => {
       const firstSymbol = this.firstSymbol();
@@ -202,7 +234,7 @@ export class MapController {
       this.layer.shadows = forced ? forced === 'on' : !this.layer.software;
       ui.shadows = this.layer.shadows;
       this.applyMode(false);
-      if (intro) this.map.easeTo({ ...START, duration: 3200, easing: (t) => 1 - Math.pow(1 - t, 3) });
+      if (intro) this.map.easeTo({ ...start, duration: 3200, easing: (t) => 1 - Math.pow(1 - t, 3) });
       else this.onMoveEnd();
     });
     this.map.on('moveend', () => this.onMoveEnd());
@@ -216,7 +248,7 @@ export class MapController {
           if (!p) { this.ui.tooltip = null; return; }
           const id = String(p.building_id).slice(-16);
           const b = this.data.index.get(id) ?? -1;
-          this.tooltipFor(b, b >= 0 ? this.data.buildings[b] : p, null, e.point.x, e.point.y);
+          this.tooltipFor(b, b >= 0 ? this.data.buildings[b] : this.data.outside.has(id) ? {} : p, null, e.point.x, e.point.y, id);
           return;
         }
         const hit = this.layer.pick(e.point.x, e.point.y, this.visible);
@@ -388,6 +420,7 @@ export class MapController {
       for (const e of this.entries.values()) if (e.view) this.linkFeatures(e);
       this.applyTheme(false);
       for (const e of this.entries.values()) this.trySelectPending(e);
+      this.trySelectPendingFlat();
       this.renderStatus();
     }, 250);
   }
@@ -451,7 +484,12 @@ export class MapController {
     // "Omgeving": every building no layer of the theme draws, in the neutral grey of the 3D view (never under a
     // coloured block, so the two never fight over the same walls). Layers on other sources (facade scan, incidents) are
     // drawn on their own tiles, so the grey cannot exclude their buildings: there the coloured blocks sit just above it.
-    const styles = this.theme.layers.map((rule) => ({ rule, ...layerStyle(rule, this.ui.palette) }));
+    const styles = this.theme.layers.map((rule) => {
+      const style = layerStyle(rule, this.ui.palette);
+      // outside the mapset's fence a building stays grey, as in 3D
+      const filter = this.fence ? (style.filter ? ['all', style.filter, this.fence] : this.fence) : style.filter;
+      return { rule, ...style, filter };
+    });
     const filters = styles.filter((s) => s.source === 'buildings').map((s) => s.filter ?? true);
     if (this.ui.context && !filters.includes(true)) {
       this.map.addLayer({
@@ -502,6 +540,7 @@ export class MapController {
     }
     this.loadPlace();
     this.renderInfo();
+    this.writeSelection();
   }
 
   // ---- picking --------------------------------------------------------------------------------------------------------
@@ -519,6 +558,7 @@ export class MapController {
     this.renderRing();
     this.loadPlace();
     this.renderInfo();
+    this.writeSelection();
   }
 
   private setHover(hit: Hit | null) {
@@ -563,18 +603,64 @@ export class MapController {
     this.map.setPaintProperty('selection-ring', 'circle-stroke-color', accent);
   }
 
+  // ---- mapsets and the address ----------------------------------------------------------------------------------------
+  /** open a mapset: its layer set becomes the layer list (names and legends from the API), its fence limits the data */
+  private setMapset(m: Mapset) {
+    this.mapset = m;
+    setLegends(m.layers);
+    const themes = mapsetThemes(m.name, m.layers);
+    this.catalog = themes.length ? { groups: [m.name], themes } : { groups: GROUPS, themes: THEMES };
+    this.theme = this.catalog.themes[0];
+    this.ui.groups = this.catalog.groups;
+    this.ui.group = this.theme.group;
+    this.ui.themeId = this.theme.id;
+    this.ui.mapset = { id: m.id, name: m.name, note: m.note ? markdown(m.note) : '', consent: m.consent ? markdown(m.consent) : '' };
+    this.fence = fenceExpression(m.fence);
+    this.data.setFence(fenceTest(m.fence));
+    document.title = `${m.name} · Funderingskaart`;
+    this.applyTheme(false);
+  }
+
+  /** the selected building into the address (a new history entry, so Back closes it) */
+  private writeSelection() {
+    const pand = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
+    if (pand === this.route.building) return;
+    // a building link names a mapset; without one the camera in the hash is the link
+    this.route = { ...this.route, building: pand, panel: pand ? this.route.panel : null };
+    if (this.mapset) writeRoute(this.route, true);
+  }
+
+  /** Back or Forward: open or close the building the address names */
+  private followRoute(r: Route) {
+    this.route = { ...this.route, building: r.building, panel: r.panel };
+    const current = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
+    if (r.building === current) return;
+    if (!r.building) { this.pendingSelect = null; this.select(null); return; }
+    locate(r.building).then((t) => { if (t) this.goTo({ lon: t.lon, lat: t.lat, zoom: 17.4, buildingId: t.pand }); });
+  }
+
+  /** flat mode: select the building from the address or a search once its data is there */
+  private trySelectPendingFlat() {
+    if (!this.flat || !this.pendingSelect) return;
+    const b = this.data.index.get(this.pendingSelect);
+    if (b === undefined) return;
+    const props = this.data.buildings[b];
+    this.pendingSelect = null;
+    this.selectFlat({ id: String(props.id), props });
+  }
+
   // ---- settings -------------------------------------------------------------------------------------------------------
   setGroup(g: string) {
     if (g === this.ui.group) return;
     this.ui.group = g;
-    if (this.theme.group !== g) this.theme = THEMES.find((t) => t.group === g)!;
+    if (this.theme.group !== g) this.theme = this.catalog.themes.find((t) => t.group === g)!;
     this.ui.themeId = this.theme.id;
     this.applyTheme();
   }
 
   setTheme(id: string) {
     if (id === this.theme.id) return;
-    this.theme = THEMES.find((t) => t.id === id)!;
+    this.theme = this.catalog.themes.find((t) => t.id === id)!;
     this.ui.themeId = id;
     this.applyTheme();
   }
@@ -616,7 +702,7 @@ export class MapController {
 
   // ---- UI state -------------------------------------------------------------------------------------------------------
   private renderLayers() {
-    this.ui.layers = THEMES.filter((t) => t.group === this.ui.group).map((t) => ({ id: t.id, name: t.name, ramp: ramp(legendColors(t, this.ui.palette)) }));
+    this.ui.layers = this.catalog.themes.filter((t) => t.group === this.ui.group).map((t) => ({ id: t.id, name: t.name, ramp: ramp(legendColors(t, this.ui.palette)) }));
   }
 
   private renderLegend() {
@@ -666,8 +752,9 @@ export class MapController {
   }
 
   /** the legend row a building falls in for the active layer */
-  private valueOf(b: number): { color: number; label: string; title: string } {
+  private valueOf(b: number, pand?: string): { color: number; label: string; title: string } {
     const neutral = NEUTRAL[this.ui.mode].noData;
+    if (b < 0 && pand && this.data.outside.has(pand)) return { color: neutral, label: 'Buiten het gebied van deze kaart', title: this.theme.name };
     if (b < 0 || !this.result) return { color: neutral, label: 'Geen FunderMaps-gegevens', title: this.theme.name };
     const r = this.result.rows[b];
     if (r === -1) return { color: neutral, label: 'Niet in deze laag', title: this.theme.name };
@@ -685,12 +772,13 @@ export class MapController {
   private renderTooltip(hit: Hit | null, x: number, y: number) {
     if (!hit) { this.ui.tooltip = null; return; }
     const { b, p } = this.props(hit);
-    this.tooltipFor(b, p, hit.view.tile.features[hit.feature], x, y);
+    const f = hit.view.tile.features[hit.feature];
+    this.tooltipFor(b, p, f, x, y, f.id);
   }
 
   /** f = the 3D BAG feature, null in flat mode */
-  private tooltipFor(b: number, p: Props, f: TileFeature | null, x: number, y: number) {
-    const v = this.valueOf(b);
+  private tooltipFor(b: number, p: Props, f: TileFeature | null, x: number, y: number, pand: string) {
+    const v = this.valueOf(b, pand);
     const height = heightOf(f, p);
     const rel = p.foundation_type_reliability ? L.RELIABILITY[String(p.foundation_type_reliability)] ?? String(p.foundation_type_reliability) : null;
     const facts: [string, string | null][] = [
@@ -737,14 +825,14 @@ export class MapController {
     } else if (this.flatSelected) {
       pandId = this.flatSelected.id;
       b = this.data.index.get(pandId) ?? -1;
-      p = b >= 0 ? this.data.buildings[b] : this.flatSelected.props;
+      p = b >= 0 ? this.data.buildings[b] : this.data.outside.has(pandId) ? {} : this.flatSelected.props;
     } else {
       this.ui.info = null;
       return;
     }
     const rel = (k: string) => (p[k] ? ` · ${L.RELIABILITY[String(p[k])] ?? String(p[k])}` : '');
     const height = heightOf(f, p);
-    const v = this.valueOf(b);
+    const v = this.valueOf(b, pandId);
     const place = this.place;
     const address = place?.street ? `${place.street} ${place.building_number ?? ''}`.trim() : null;
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
@@ -787,6 +875,13 @@ export class MapController {
       id: `NL.IMBAG.Pand.${pandId}`,
     };
   }
+}
+
+/** a building from the address (pand number or an old gfm id) → its pand number and where it is (our geocoder) */
+async function locate(id: string, signal?: AbortSignal): Promise<{ pand: string; lon: number; lat: number } | null> {
+  const info = await buildingInfo(/^\d{16}$/.test(id) ? `NL.IMBAG.PAND.${id}` : id, signal);
+  if (!info?.building_id || typeof info.building_lon !== 'number' || typeof info.building_lat !== 'number') return null;
+  return { pand: info.building_id.slice(-16), lon: info.building_lon, lat: info.building_lat };
 }
 
 /** ridge height above ground from 3D BAG, else the height in our own data */

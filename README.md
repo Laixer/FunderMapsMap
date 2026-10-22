@@ -22,11 +22,17 @@ pnpm build      # type check + production build into dist/
   (`src/engine/bag3d-tileset.ts`: region and box volumes, transforms down the tree) and converts the tiles in Web Workers
   (`src/engine/tiles.ts`). 3D BAG works as well (other base URL). When the 3D source cannot be reached the map falls
   back to **flat mode**: our own building tiles as blocks with the same colours.
-- **FunderMaps data:** our own `buildings` vector tiles (Martin) at zoom 14, where every building carries every field.
-  A worker decodes only the properties (`src/data/`); they are joined to the 3D BAG features on the 16-digit BAG pand
-  number.
+- **FunderMaps data:** our own vector tiles (Martin) at zoom 14: `buildings` (every field per building), `facade_scan`
+  and `incident`. A worker decodes only the properties and merges them per building (`src/data/`); they are joined to
+  the 3D features on the 16-digit BAG pand number. Incidents per buurt, wijk and gemeente and the building blocks are
+  drawn on the ground with the current map app's own layer specs (`src/config/area-layers.json`).
 - **Colours** are the current map app's own layer rules and the database legends (`src/engine/rules.json`,
-  `legends.json`), evaluated with MapLibre's style-spec engine, optionally in the 2026 palette.
+  `legends.json`, frozen by `tools/freeze-rules.py`), evaluated with MapLibre's style-spec engine, optionally in the
+  2026 palette. An open mapset brings its own legends at runtime.
+- **Mapsets and links:** `/map/<mapset>` opens a public mapset from the API (`/api/mapset/<id or slug>`): its layer
+  set, note, disclaimer, centre and fence. `/map/<mapset>/building/<pand id>(/<panel>)` opens a building on it; the
+  current map app's old forms (`/kaart/…`, `…/gebouw/…`) and `?lat=…&lng=…` work too. The camera is in the hash
+  (`src/map/route.ts`).
 - **Search:** PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 

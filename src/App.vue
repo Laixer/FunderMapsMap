@@ -6,13 +6,15 @@ import LayerPanel from '@/components/LayerPanel.vue';
 import HoverCard from '@/components/HoverCard.vue';
 import InfoCard from '@/components/InfoCard.vue';
 import StatusPill from '@/components/StatusPill.vue';
+import ConsentModal from '@/components/ConsentModal.vue';
+import { parseRoute } from '@/map/route';
 
 const ui = reactive(initialUi());
 const mapEl = ref<HTMLElement>();
 const ctl = shallowRef<MapController>();
 
 onMounted(async () => {
-  ctl.value = await MapController.create(mapEl.value!, ui);
+  ctl.value = await MapController.create(mapEl.value!, ui, parseRoute());
 });
 </script>
 
@@ -22,4 +24,5 @@ onMounted(async () => {
   <HoverCard :tip="ui.tooltip" />
   <InfoCard v-if="ui.info" :info="ui.info" @close="ctl?.select(null)" />
   <StatusPill :status="ui.status" />
+  <ConsentModal v-if="ui.mapset?.consent" :key="ui.mapset.id" :mapset="ui.mapset" />
 </template>

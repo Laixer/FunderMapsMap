@@ -18,7 +18,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
       </div>
       <div class="titles">
         <h1>Funderingskaart</h1>
-        <p>De funderingen van Nederland in 3D</p>
+        <p>{{ ui.mapset?.name ?? 'De funderingen van Nederland in 3D' }}</p>
       </div>
       <button class="icon" :aria-label="ui.mode === 'dark' ? 'Lichte weergave' : 'Donkere weergave'" @click="ctl.toggleMode()">
         <svg v-if="ui.mode === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
@@ -30,7 +30,12 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
     </header>
     <SearchBox :ctl="ctl" />
     <div v-show="!collapsed" class="body">
-      <div class="tabs" role="tablist" aria-label="Onderwerp">
+      <p v-if="ui.notice" class="notice" role="status">{{ ui.notice }}</p>
+      <details v-if="ui.mapset?.note" class="about">
+        <summary>Over deze kaart</summary>
+        <div class="md" v-html="ui.mapset.note"></div>
+      </details>
+      <div v-if="ui.groups.length > 1" class="tabs" role="tablist" aria-label="Onderwerp">
         <button v-for="g in ui.groups" :key="g" role="tab" :aria-selected="g === ui.group" @click="ctl.setGroup(g)">{{ g }}</button>
       </div>
       <div class="layers" role="radiogroup" aria-label="Kaartlaag">
@@ -103,6 +108,11 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .switch input:checked + .knob::after { transform: translateX(12px); }
 .switch input:focus-visible + .knob { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
+.notice { margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--raise); font-size: 12.5px; color: var(--ink-2); }
+.about { margin: 0 0 10px; border-radius: 10px; background: var(--raise); padding: 7px 10px; font-size: 13px; }
+.about summary { cursor: pointer; font-weight: 600; color: var(--ink-2); }
+.about .md { margin-top: 6px; color: var(--ink-2); line-height: 1.5; max-height: 40vh; overflow: auto; }
+.about .md :deep(p) { margin: 0 0 8px; }
 @media (max-width: 640px) {
   .panel { left: 8px; right: 54px; top: 8px; width: auto; max-height: 58%; }
 }

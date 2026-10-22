@@ -5,6 +5,7 @@
 import { expression, featureFilter, latest } from '@maplibre/maplibre-gl-style-spec';
 import RULES from './rules.json';
 import LEGENDS from './legends.json';
+import AREA_LAYERS from '@/config/area-layers.json';
 import { colorDistance, parseColor, recolorExpression, remap, type PaletteName } from './palette';
 
 export type Props = Record<string, string | number | boolean>;
@@ -98,7 +99,47 @@ function referenced(expr: unknown, out: Set<string>): Set<string> {
 
 const compiled = new Map<string, Compiled>();
 const COLOR_SPEC = (latest as any)['paint_fill-extrusion']['fill-extrusion-color'];
-const legendOf = (id: string) => (LEGENDS as Record<string, { name: string; fields: { name: string; color: string }[] }>)[id];
+type Legend = { name: string; fields: { name: string; color: string }[] };
+/** legends of the open mapset (its layer set, at runtime); the frozen DB legends for everything else */
+let runtimeLegends = new Map<string, Legend>();
+const legendOf = (id: string): Legend => runtimeLegends.get(id) ?? (LEGENDS as Record<string, Legend>)[id];
+
+/** use these legends (a mapset's layer set) over the frozen ones; [] goes back to the frozen ones */
+export function setLegends(layers: { id: string; name: string; fields: { name: string; color: string }[] }[]) {
+  runtimeLegends = new Map(layers.filter((l) => l.fields?.length).map((l) => [l.id, { name: l.name, fields: l.fields }]));
+  compiled.clear();
+}
+
+/**
+ * The themes of a mapset: one per layer of its layer set, in its order and under its names. Building layers colour the
+ * buildings, area layers draw on the ground; the building blocks have their own switch and a layer this map does not
+ * know (a retired one) is left out. With the foundation types and the recovery layer together, a first theme shows
+ * them at once, as switching them all on does in the current map app.
+ */
+export function mapsetThemes(group: string, layers: { id: string; name: string }[]): Theme[] {
+  const rules = RULES as Record<string, unknown>;
+  const areas = AREA_LAYERS as Record<string, unknown>;
+  const themes: Theme[] = [];
+  for (const l of layers) {
+    if (l.id === 'building-cluster') continue;
+    if (rules[l.id]) themes.push({ id: l.id, group, name: l.name, layers: [l.id] });
+    else if (areas[l.id]) themes.push({ id: l.id, group, name: l.name, layers: [], area: l.id });
+  }
+  const types = FOUNDATION_TYPES.filter((id) => layers.some((l) => l.id === id));
+  const recovery = layers.find((l) => l.id === 'foundation-recovery');
+  if (types.length && recovery) {
+    const typeName = layers.find((l) => l.id === types[0])!.name;
+    themes.unshift({
+      id: 'foundation', group, name: `${typeName} en ${recovery.name.toLowerCase()}`,
+      layers: ['foundation-recovery', ...types],
+      sections: [
+        { title: typeName, legend: types[0], layers: types },
+        { title: recovery.name, legend: 'foundation-recovery', layers: ['foundation-recovery'] },
+      ],
+    });
+  }
+  return themes;
+}
 
 function compile(id: string, palette: PaletteName): Compiled {
   const key = `${palette}:${id}`;
