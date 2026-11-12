@@ -8,7 +8,8 @@ import InfoCard from '@/components/InfoCard.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import ConsentModal from '@/components/ConsentModal.vue';
 import { parseRoute } from '@/map/route';
-import { loadSession } from '@/api/session';
+import { loadSession, session, toLogin } from '@/api/session';
+import BuildingPanel from '@/panel/BuildingPanel.vue';
 
 const ui = reactive(initialUi());
 const mapEl = ref<HTMLElement>();
@@ -24,7 +25,9 @@ onMounted(async () => {
   <div ref="mapEl" class="map"></div>
   <LayerPanel v-if="ctl" :ui="ui" :ctl="ctl" />
   <HoverCard :tip="ui.tooltip" />
-  <InfoCard v-if="ui.info" :info="ui.info" @close="ctl?.select(null)" />
+  <!-- a user gets the full building panel; a guest the card with what the map itself knows, and the way to log in -->
+  <BuildingPanel v-if="ui.info && session.user" :pand="ui.info.id.slice(-16)" :info="ui.info" @close="ctl?.select(null)" />
+  <InfoCard v-else-if="ui.info" :info="ui.info" :guest="session.ready" @close="ctl?.select(null)" @login="toLogin()" />
   <StatusPill :status="ui.status" />
   <ConsentModal v-if="ui.mapset?.consent" :key="ui.mapset.id" :mapset="ui.mapset" />
 </template>

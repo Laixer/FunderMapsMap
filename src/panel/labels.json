@@ -1,0 +1,424 @@
+{
+ "enums": {
+  "AccessPolicy": {
+   "private": "Afgeschermd",
+   "public": "Publiek"
+  },
+  "AuditStatus": {
+   "discarded": "Vervallen",
+   "done": "Afgerond",
+   "pending": "In afwachting",
+   "pending_review": "Ter review",
+   "rejected": "Afgewezen",
+   "todo": "Nog behandelen"
+  },
+  "ConstructionPile": {
+   "broken": "Gebroken",
+   "decay": "Verrot",
+   "perished": "Vergaan",
+   "pinched": "Verschoven",
+   "pressed": "Gedrukt",
+   "punched": "Geperforeerd",
+   "root_growth": "Wortelgroei"
+  },
+  "CrackType": {
+   "big": "Groot (> 3 mm)",
+   "mediocre": "Matig (1 - 3 mm)",
+   "nil": "Zeer klein (haarscheuren)",
+   "none": "Geen",
+   "small": "Klein (0,5 - 1 mm)"
+  },
+  "EnforcementTerm": {
+   "term05": "0 tot 5 jaar",
+   "term10": "Tot 10 jaar (F3O)",
+   "term1020": "10 tot 20 jaar",
+   "term15": "Tot 15 jaar (F3O)",
+   "term20": "Tot 20 jaar (F3O)",
+   "term25": "Tot 25 jaar (F3O)",
+   "term30": "Tot 30 jaar (F3O)",
+   "term40": "Tot 40 jaar (F3O)",
+   "term5": "Tot 5 jaar (F3O)",
+   "term510": "5 tot 10 jaar"
+  },
+  "EnvironmentDamageCharacteristics": {
+   "construction_nearby": "Werkzaamheden in wijk",
+   "elevation": "Recent opgehoogd",
+   "flooding": "Wateroverlast",
+   "foundation_damage_nearby": "Funderingsschade in wijk",
+   "increasing_traffic": "Verkeerstoename",
+   "low_ground_water": "Wateronderlast",
+   "sagging_cables_pipes": "Verzakkende kabels/leidingen",
+   "sagging_sewer_connection": "Verzakkend riool",
+   "sewage_leakage": "Lekkend riool",
+   "subsidence": "Bodemdaling",
+   "vegetation_nearby": "Bomen nabij"
+  },
+  "Facade": {
+   "front": "Voorgevel",
+   "rear": "Achtergevel",
+   "sidewall_left": "Linkergevel",
+   "sidewall_right": "Rechtergevel"
+  },
+  "FoundationDamageCause": {
+   "bio_fungus_infection": "Bacteriële en/of schimmelaantasting",
+   "bio_infection": "Bacteriële aantasting (palenpest)",
+   "construction_flaw": "Constructiefouten",
+   "construction_heave": "Opdrukking pand",
+   "drainage": "Te lage grondwaterstand",
+   "drystand": "Droogstand houten paalkop",
+   "foundation_flaw": "Funderingsfouten",
+   "fungus_infection": "Schimmelaantasting (paalrot)",
+   "gas": "Gaswinning",
+   "groundwater_level_reduction": "Verlaging van grondwaterniveau",
+   "japanese_knotweed": "Beschadiging fundering door Japanse duizendknoop",
+   "negative_cling": "Negatieve kleef",
+   "overcharge": "Overbelasting",
+   "overcharge_negative_cling": "Overbelasting en/of negatieve kleef",
+   "partial_foundation_recovery": "Partieel funderingsherstel",
+   "subsidence": "Verzakking",
+   "vegetation": "Beschadiging fundering door planten en wortels",
+   "vibrations": "Trillingen"
+  },
+  "FoundationDamageCharacteristics": {
+   "crack": "Scheuren",
+   "crawlspace_flooding": "Water in kruipruimte",
+   "crooked_floor_wall": "Scheve vloer of wand",
+   "jamming_door_window": "Klemmende deuren en ramen",
+   "skewed": "Scheefstand",
+   "threshold_above_subsurface": "Drempel boven maaiveld",
+   "threshold_below_subsurface": "Drempel onder maaiveld"
+  },
+  "FoundationQuality": {
+   "bad": "Slecht",
+   "good": "Goed",
+   "mediocre": "Matig",
+   "mediocre_bad": "Matig tot slecht",
+   "mediocre_good": "Matig tot goed",
+   "tolerable": "Redelijk"
+  },
+  "FoundationRisk": {
+   "a": "A (Geen risico)",
+   "b": "B (Laag risico)",
+   "c": "C (Verhoogd risico)",
+   "d": "D (Hoog risico)",
+   "e": "E (Aanzienlijk hoog risico)"
+  },
+  "FoundationType": {
+   "combined": "Gecombineerde fundering",
+   "concrete": "Betonpaalfundering",
+   "no_pile": "Ondiepe fundering",
+   "no_pile_bearing_floor": "Ondiepe fundering, plaatfundering",
+   "no_pile_concrete_floor": "Ondiepe fundering, betonvloer",
+   "no_pile_masonry": "Ondiepe fundering, gemetseld",
+   "no_pile_slit": "Ondiepe fundering, slieten",
+   "no_pile_strips": "Ondiepe fundering, stroken",
+   "other": "Overig",
+   "steel_pile": "Stalen buispaal",
+   "weighted_pile": "Verzwaarde puntpaal",
+   "wood": "Houten paalfundering",
+   "wood_amsterdam": "Houten (Amsterdamse) paalfundering",
+   "wood_amsterdam_arch": "Houten (Amsterdamse) paalfundering met spaarboog",
+   "wood_charger": "Houten paal met betonoplanger",
+   "wood_rotterdam": "Houten (Rotterdamse) paalfundering",
+   "wood_rotterdam_amsterdam": "Houten (Rotterdamse/Amsterdamse) paalfundering",
+   "wood_rotterdam_arch": "Houten (Rotterdamse) paalfundering met spaarboog"
+  },
+  "IncidentQuestionType": {
+   "buy_sell": "Kopen/verkopen",
+   "financial": "Financiële vraag",
+   "guidance": "Begeleiding",
+   "legal": "Juridische vraag",
+   "other": "Overig",
+   "recovery": "Herstelvraag",
+   "registration": "Registratie",
+   "research": "Onderzoeksvraag"
+  },
+  "InquiryType": {
+   "additional_research": "Aanvullend onderzoek",
+   "architectural_research": "Bouwkundig onderzoek",
+   "archive_research": "Archiefonderzoek",
+   "demolition_research": "Sloopgrensonderzoek",
+   "facade_scan": "Gevelscan",
+   "foundation_advice": "Funderingsadvies",
+   "foundation_research": "Funderingsonderzoek",
+   "ground_water_level_research": "Grondwateronderzoek",
+   "inspectionpit": "Onderzoeksput",
+   "monitoring": "Monitoring",
+   "note": "Notitie",
+   "quickscan": "QuickScan",
+   "second_opinion": "Second opinion",
+   "soil_investigation": "Grondonderzoek",
+   "unknown": "Onbekend"
+  },
+  "PileType": {
+   "internally_driven": "Inwendig geheide buispaal",
+   "press": "Drukpaal",
+   "segment": "Segmentpaal"
+  },
+  "Quality": {
+   "large": "Zeer goed",
+   "mediocre": "Goed",
+   "nil": "Slecht",
+   "small": "Redelijk"
+  },
+  "RecoveryDocumentType": {
+   "archive_report": "Archiefonderzoek",
+   "foundation_report": "Funderingsonderzoek",
+   "owner_evidence": "Bewijs van eigenaar",
+   "permit": "Vergunning",
+   "unknown": "Onbekend"
+  },
+  "RecoveryStatus": {
+   "executed": "Uitgevoerd",
+   "planned": "Gepland",
+   "requested": "Aangevraagd"
+  },
+  "RecoveryType": {
+   "beam_on_pile": "Opzetters",
+   "injection": "Grondinjectie/verbetering",
+   "pile_in_wall": "Paalinkassing (in muur)",
+   "pile_lowering": "Paalkopverlaging",
+   "table": "Tafelfundering",
+   "unknown": "Onbekend"
+  },
+  "Reliability": {
+   "cluster": "Afgeleid",
+   "established": "Vastgesteld",
+   "indicative": "Indicatief",
+   "supercluster": "Afgeleid"
+  },
+  "RotationType": {
+   "big": "Groot",
+   "mediocre": "Middelmatig",
+   "nil": "Nihil",
+   "small": "Klein",
+   "very_big": "Zeer groot"
+  },
+  "Soil": {
+   "az": "Afgesloten zeearmen",
+   "du": "Duinen",
+   "hl": "Heuvelland",
+   "hz": "Zandgronden",
+   "lv": "Laagveengronden",
+   "ni": "Stedelijk gebied",
+   "ri": "Rivierengebied",
+   "zk": "Zeekleigebied"
+  },
+  "Substructure": {
+   "basement": "Souterrain",
+   "cellar": "Kelder",
+   "crawlspace": "Kruipruimte",
+   "none": "Geen"
+  },
+  "WoodEncroachement": {
+   "bio_fungus_infection": "Bacteriële en schimmelaantasting",
+   "bio_infection": "Bacteriële aantasting",
+   "fungus_infection": "Schimmelaantasting"
+  },
+  "WoodQuality": {
+   "area1": "Gebied I",
+   "area2": "Gebied II",
+   "area3": "Gebied III",
+   "area4": "Gebied IV"
+  },
+  "WoodType": {
+   "pine": "Grenen",
+   "spruce": "Vuren"
+  }
+ },
+ "fields": {
+  "address": {
+   "buildingNumber": "Nummeraanduiding",
+   "fullAddress": "Adres",
+   "postalCode": "Postcode"
+  },
+  "analysis": {
+   "bioInfectionReliability": "Betrouwbaarheid bacteriële aantasting",
+   "bioInfectionRisk": "Risico bacteriële aantasting",
+   "constructionYear": "Bouwjaar",
+   "constructionYearReliability": "Betrouwbaarheid bouwjaar",
+   "dewateringDepth": "Ontwateringsdiepte",
+   "dewateringDepthReliability": "Betrouwbaarheid ontwateringsdiepte",
+   "dewateringDepthRisk": "Risico ontwateringsdiepte",
+   "drystand": "Droogstand",
+   "drystandReliability": "Betrouwbaarheid droogstandsrisico",
+   "drystandRisk": "Droogstandsrisico",
+   "foundationType": "Type fundering",
+   "foundationTypeReliability": "Betrouwbaarheid funderingstype",
+   "groundLevel": "Maaiveldniveau voor pand",
+   "groundWaterLevel": "Grondwaterstand volgens landelijk watermodel",
+   "height": "Pandhoogte",
+   "recoveryType": "Herstelmethode",
+   "restorationCosts": "Indicatieve funderingsherstelkosten",
+   "soil": "Type ondergrond",
+   "surfaceArea": "Vloeroppervlak",
+   "unclassifiedRisk": "Vastgesteld",
+   "velocity": "Pandzakkingssnelheid (InSAR)",
+   "volume": "Inhoud"
+  },
+  "attributionControl": {
+   "contractor": "Uitvoerder",
+   "contractorName": "Uitvoerder",
+   "creator": "Verwerkt door",
+   "dataOwner": "Data-eigenaar",
+   "dataOwnerName": "Data-eigenaar",
+   "owner": "Opdrachtgever",
+   "ownerName": "Opdrachtgever",
+   "reviewer": "Gecontroleerd door"
+  },
+  "building": {
+   "externalId": "BAG Pand ID"
+  },
+  "district": {
+   "name": "Wijk"
+  },
+  "incident": {
+   "address": "Adres",
+   "auditStatus": "Controlestatus",
+   "building": "BAG Pand ID",
+   "chainedBuilding": "Geschakelde bouw",
+   "clientId": "Meldingsloket",
+   "clientName": "Meldingsloket",
+   "createDate": "Meldingsdatum",
+   "documentFile": "Link naar documenten",
+   "email": "E-mail melder",
+   "environmentDamageCharacteristics": "Omgevingsaspecten",
+   "foundationDamageCause": "Vermoedelijke schadeoorzaak",
+   "foundationDamageCharacteristics": "Schadeoorzaken",
+   "foundationRecovery": "Herstel uitgevoerd?",
+   "foundationType": "Funderingstype",
+   "id": "Nummer",
+   "internalNote": "Interne opmerking",
+   "name": "Naam melder",
+   "neighborRecovery": "Herstel uitgevoerd bij buren?",
+   "note": "Opmerking",
+   "owner": "Eigenaar",
+   "phoneNumber": "Telefoon melder",
+   "questionType": "Vraagtype",
+   "topic": "Onderwerp"
+  },
+  "inquiry": {
+   "auditStatus": "Controlestatus",
+   "contractor": "Uitvoerder",
+   "creator": "Verwerkt door",
+   "documentDate": "Documentdatum",
+   "documentName": "Documentnaam",
+   "floorMeasurement": "Vloerveldwaterpassing uitgevoerd?",
+   "id": "Onderzoeksnummer",
+   "inspection": "Inspectieput gemaakt?",
+   "jointMeasurement": "Lintvoegmeting uitgevoerd?",
+   "note": "Opmerking",
+   "owner": "Opdrachtgever",
+   "reviewer": "Gecontroleerd door",
+   "standardF3o": "Conform KCAF/F3O uitgevoerd?",
+   "type": "Onderzoekstype"
+  },
+  "inquirySample": {
+   "address": "Adres ID",
+   "building": "Pand ID",
+   "builtYear": "Bouwjaar volgens onderzoek",
+   "carryingCapacityQuality": "Resterende draagkracht paal",
+   "concreteChargerLength": "Oplangerlengte",
+   "constructionLevel": "Niveau onderkant funderingsbalk",
+   "constructionPile": "Constructie paal",
+   "constructionQuality": "Funderingsbalk",
+   "constructionType": "Materiaal funderingsbalk",
+   "cpt": "Sondering",
+   "crackFacadeBackRestored": "Hersteld",
+   "crackFacadeBackSize": "Scheur",
+   "crackFacadeBackType": "Type",
+   "crackFacadeFrontRestored": "Hersteld",
+   "crackFacadeFrontSize": "Scheur",
+   "crackFacadeFrontType": "Type",
+   "crackFacadeLeftRestored": "Hersteld",
+   "crackFacadeLeftSize": "Scheur",
+   "crackFacadeLeftType": "Type",
+   "crackFacadeRightRestored": "Hersteld",
+   "crackFacadeRightSize": "Scheur",
+   "crackFacadeRightType": "Type",
+   "crackIndoorRestored": "Hersteld",
+   "crackIndoorSize": "Scheur",
+   "crackIndoorType": "Type",
+   "damageCause": "Oorzaak funderingsschade",
+   "damageCharacteristics": "Geconstateerde schade",
+   "deformedFacade": "Gevel vervormd",
+   "enforcementTerm": "Handhavingstermijn",
+   "foundationDepth": "Funderingsniveau",
+   "foundationType": "Type fundering",
+   "groundLevel": "Maaiveldniveau",
+   "groundwaterLevelNet": "Grondwaterniveau",
+   "groundwaterLevelTemp": "Grondwaterniveau bij ontgraving",
+   "masonLevel": "Niveau onderkant metselwerk",
+   "masonQuality": "Kwaliteit metselwerk",
+   "monitoringWell": "Peilbuis",
+   "note": "Opmerking",
+   "overallQuality": "Totale funderingskwaliteit",
+   "pileDiameterBottom": "Paalpuntdiameter",
+   "pileDiameterTop": "Paalkopdiameter",
+   "pileDistanceLength": "Hart-op-hartafstand",
+   "pileHeadLevel": "Paalkopniveau",
+   "pileTipLevel": "Paalpuntniveau",
+   "pileWoodCapacityVerticalQuality": "Kwaliteit draagkracht paal",
+   "recoveryAdvised": "Funderingshersteladvies",
+   "settlementSpeed": "Pandzakkingssnelheid gemeten",
+   "skewedParallel": "Lintvoegmeting",
+   "skewedParallelFacade": "Lintvoegmeting beoordeling",
+   "skewedPerpendicular": "Loodmeting",
+   "skewedPerpendicularFacade": "Loodmeting beoordeling",
+   "skewedWindowFrame": "Scheve deur- en/of raamkozijnen",
+   "substructure": "Onderbouw",
+   "thresholdBackLevel": "Drempelniveau achterzijde",
+   "thresholdFrontLevel": "Drempelniveau voorzijde",
+   "thresholdUpdownSkewed": "Ongelijkmatige zakking?",
+   "woodCapacityHorizontalQuality": "Horizontale draagkracht paal",
+   "woodEncroachement": "Houtaantasting",
+   "woodLevel": "Niveau bovenkant langshout",
+   "woodPenetrationDepth": "Inslagdiepte",
+   "woodQuality": "Houtkwaliteit paal",
+   "woodQualityNecessity": "Noodzaak houtonderzoek",
+   "woodType": "Houtsoort"
+  },
+  "municipality": {
+   "name": "Gemeente"
+  },
+  "neighborhood": {
+   "name": "Buurt"
+  },
+  "recovery": {
+   "auditStatus": "Controlestatus",
+   "documentName": "Documentnaam",
+   "id": "Herstelnummer",
+   "note": "Opmerking",
+   "type": "Type bewijslast"
+  },
+  "recoverySample": {
+   "contractor": "Uitvoerder",
+   "facade": "Herstelde gevel",
+   "note": "Opmerking",
+   "permit": "Vergunningsnummer",
+   "permitDate": "Vergunningsdatum",
+   "pileType": "Paaltype",
+   "recovery": "Herstelnummer",
+   "recoveryDate": "Datum herstel",
+   "status": "Status herstel",
+   "type": "Methode herstel"
+  },
+  "risk": {
+   "bioInfectionReliability": "Betrouwbaarheid bacteriële aantasting",
+   "bioInfectionRisk": "Risico bacteriële aantasting",
+   "dewateringDepth": "Ontwateringsdiepte",
+   "dewateringDepthReliability": "Betrouwbaarheid ontwateringsdiepte",
+   "dewateringDepthRisk": "Risico ontwateringsdiepte",
+   "drystand": "Droogstand",
+   "drystandReliability": "Betrouwbaarheid droogstandsrisico",
+   "drystandRisk": "Droogstandsrisico",
+   "unclassifiedRisk": "Vastgesteld"
+  },
+  "state": {
+   "name": "Provincie"
+  },
+  "stateControl": {
+   "auditStatus": "Controlestatus"
+  }
+ }
+}

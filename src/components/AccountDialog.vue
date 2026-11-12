@@ -71,7 +71,7 @@ async function savePassword() {
 </template>
 
 <style scoped>
-dialog { width: min(460px, calc(100vw - 24px)); padding: 22px; color: var(--ink); background: var(--surface-strong); }
+dialog { width: min(460px, calc(100vw - 24px)); padding: 22px; color: var(--ink); background: var(--solid); }
 dialog::backdrop { background: rgba(10, 14, 20, .45); }
 form { display: grid; gap: 13px; }
 h2 { margin: 0 0 2px; font-size: 18px; font-weight: 650; }

@@ -19,6 +19,7 @@
     "@mapbox/vector-tile": "^2.0.4",
     "@maplibre/maplibre-gl-style-spec": "^26.4.4",
     "better-auth": "~1.7.22",
+    "chart.js": "^4.6.1",
     "maplibre-gl": "^6.15.0",
     "pbf": "^4.0.1",
     "three": "0.186.1",

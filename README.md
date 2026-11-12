@@ -38,6 +38,13 @@ pnpm build      # type check + production build into dist/
   `/login`, `/forgot-password`, `/reset-password`, `/account` (passkeys, sign-out), plus the profile and password
   dialogs behind the user menu (`src/pages/AuthPages.vue`, `src/api/auth.ts`). The cookie belongs to the login host's
   site, so on any other host name the map stays a guest's map and the login pages forward to `VITE_LOGIN_HOST`.
+- **Building panel** (`src/panel/`): for a logged-in user, everything the current map app shows for a building, from
+  the API's customer part: key facts, Pand, Locatie, Fundering, Funderingsrisico, Onderzoek and Herstel (with their
+  samples and documents), Incidenten, the statistics of the neighbourhood (Chart.js, loaded with the dialog) and the
+  PDF report. The view is in the address (`…/building/<pand>/<panel>`). Labels and enum texts are frozen from the
+  current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest keeps
+  the card with what the map itself knows, and the way to log in. The analysis and statistics calls are the billed
+  ones, as today.
 - **Search:** PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 

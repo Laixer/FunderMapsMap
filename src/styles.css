@@ -4,6 +4,8 @@
   --page: #F3F1EC;
   --surface: rgba(255, 255, 255, 0.8);
   --surface-strong: rgba(255, 255, 255, 0.94);
+  /* dialogs: nothing of the map shows through */
+  --solid: #FFFFFF;
   --raise: rgba(20, 24, 31, 0.04);
   --line: rgba(20, 24, 31, 0.09);
   --ink: #151A21;
@@ -20,6 +22,7 @@
   --page: #12161C;
   --surface: rgba(24, 29, 37, 0.78);
   --surface-strong: rgba(26, 31, 40, 0.95);
+  --solid: #1A1F28;
   --raise: rgba(255, 255, 255, 0.05);
   --line: rgba(255, 255, 255, 0.09);
   --ink: #E9EDF2;
