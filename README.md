@@ -51,9 +51,12 @@ pnpm build      # type check + production build into dist/
 - **Where you were:** the last position is remembered as the current map app does it (`src/map/position.ts`): with the
   account for a user (`/api/user/metadata`, the same keys), in the browser for a guest. A building or a position in
   the address wins.
-- **3D or blocks:** the "3D-panden" switch chooses between the 3D models and flat mode (our own tiles as blocks); the
-  choice is remembered. Without a choice a phone and a device without a GPU start with blocks, everything else with
-  3D; `?view=3d|flat` tries the other once. Flat mode is still the fallback when the 3D source cannot be reached.
+- **3D or 2D:** the "3D-panden" switch chooses between the 3D models and a plain 2D map: our own building tiles as
+  flat shapes, seen from straight above. The choice is remembered. Without a choice a phone and a device without a GPU
+  start in 2D, everything else in 3D; `?view=3d|flat` tries the other once. When the 3D source cannot be reached the
+  buildings stand up as blocks from the same tiles, so the map still reads as the 3D one.
+- **Look:** dark unless the visitor chose light. Shadows, the surroundings and the 2026 colours are simply on. The page
+  itself never scrolls (it is clipped): panels and the login pages scroll inside themselves.
 - **Phone:** below 640 px the layer panel folds (and folds again when a building opens), the building's panel and
   card are sheets from the bottom, lists stack, touch targets are 40 px.
 - **Keyboard:** the building panel takes the focus when it opens, each view moves it to its heading, Escape goes back

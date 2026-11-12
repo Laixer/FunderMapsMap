@@ -19,6 +19,9 @@ onMounted(() => {
 function accept() {
   try { localStorage.setItem(key, String(Date.now())); } catch { /* private mode */ }
   open.value = false;
+  // the button that had the focus is gone: hand it to the building's panel when one is open under the disclaimer
+  // (a building link), so the keyboard and a screen reader carry on there
+  requestAnimationFrame(() => document.querySelector<HTMLElement>('aside.bp h2[tabindex]')?.focus({ preventScroll: true }));
 }
 </script>
 

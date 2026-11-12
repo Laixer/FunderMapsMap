@@ -269,8 +269,13 @@ export class MapController {
       this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.layer.software || matchMedia('(max-width: 640px)').matches));
       ui.flat = this.wantFlat;
       this.applyMode(false);
-      if (intro) this.map.easeTo({ ...start, duration: 3200, easing: (t) => 1 - Math.pow(1 - t, 3) });
-      else this.onMoveEnd();
+      // the opening sweep belongs to the 3D view; a 2D map just opens, seen from straight above (unless the address
+      // or a remembered position says how to look)
+      if (intro && !this.wantFlat) this.map.easeTo({ ...start, duration: 3200, easing: (t) => 1 - Math.pow(1 - t, 3) });
+      else {
+        if (intro) this.map.jumpTo({ center: start.center, zoom: start.zoom, pitch: 0, bearing: 0 });
+        this.onMoveEnd();
+      }
     });
     this.map.on('moveend', () => this.onMoveEnd());
     this.map.on('mousemove', (e) => {
@@ -531,8 +536,11 @@ export class MapController {
       this.entries.clear();
       this.entryOfView.clear();
       this.setFlat(true);
+      // a 2D map is looked at from straight above
+      this.map.easeTo({ pitch: 0, duration: 600 });
     } else {
       this.setFlat(false);
+      if (this.map.getPitch() < 20) this.map.easeTo({ pitch: START.pitch, duration: 600 });
       void this.updateTiles();
     }
   }
@@ -543,6 +551,14 @@ export class MapController {
     for (const id of this.flatLayers) if (this.map.getLayer(id)) this.map.removeLayer(id);
     this.flatLayers = [];
     if (!this.flat) return;
+    // By choice ("3D-panden" off) the buildings are flat shapes on the ground, a plain 2D map. Only when the 3D models
+    // cannot be reached do they stand up as blocks, so the map still reads as the 3D one.
+    const planes = this.wantFlat;
+    const paint = (color: unknown, lift: number) => (planes
+      ? { 'fill-color': color, 'fill-opacity': 0.92 }
+      : { 'fill-extrusion-color': color, 'fill-extrusion-height': ['+', ['coalesce', ['get', 'height'], 8], lift], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.92 }) as any;
+    // one of two layer types: the style spec's types cannot say "either"
+    const type: any = planes ? 'fill' : 'fill-extrusion';
     // "Omgeving": every building no layer of the theme draws, in the neutral grey of the 3D view (never under a
     // coloured block, so the two never fight over the same walls). Layers on other sources (facade scan, incidents) are
     // drawn on their own tiles, so the grey cannot exclude their buildings: there the coloured blocks sit just above it.
@@ -555,14 +571,9 @@ export class MapController {
     const filters = styles.filter((s) => s.source === 'buildings').map((s) => s.filter ?? true);
     if (this.ui.context && !filters.includes(true)) {
       this.map.addLayer({
-        id: 'fm-flat-context', type: 'fill-extrusion', source: 'fm', 'source-layer': 'buildings', minzoom: 13,
+        id: 'fm-flat-context', type, source: 'fm', 'source-layer': 'buildings', minzoom: 13,
         ...(filters.length ? { filter: ['!', ['any', ...filters]] as any } : {}),
-        paint: {
-          'fill-extrusion-color': toHex(NEUTRAL[this.ui.mode].noData),
-          'fill-extrusion-height': ['coalesce', ['get', 'height'], 8],
-          'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.92,
-        },
+        paint: paint(toHex(NEUTRAL[this.ui.mode].noData), 0),
       }, 'fm-flat-selected');
       this.flatLayers.push('fm-flat-context');
     }
@@ -570,15 +581,10 @@ export class MapController {
       const id = `fm-flat-${rule}`;
       const own = source !== 'buildings';
       this.map.addLayer({
-        id, type: 'fill-extrusion', source: this.sourceFor(source), 'source-layer': source, minzoom: 13,
+        id, type, source: this.sourceFor(source), 'source-layer': source, minzoom: 13,
         ...(filter ? { filter: filter as any } : {}),
-        paint: {
-          'fill-extrusion-color': color as any,
-          // a few centimetres higher than the grey context blocks, which share these buildings' walls
-          'fill-extrusion-height': ['+', ['coalesce', ['get', 'height'], 8], own ? 0.05 : 0],
-          'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.92,
-        },
+        // as blocks: a few centimetres higher than the grey context blocks, which share these buildings' walls
+        paint: paint(color, own ? 0.05 : 0),
       }, 'fm-flat-selected');
       this.flatLayers.push(id);
     }
@@ -841,7 +847,7 @@ export class MapController {
     const panden = ready.reduce((s, e) => s + (e.view?.tile.buildings ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
-    if (this.wantFlat) text = this.map.getZoom() < 13 ? 'Zoom in voor de panden' : 'Panden als blokken';
+    if (this.wantFlat) text = this.map.getZoom() < 13 ? 'Zoom in voor de panden' : 'Panden in 2D';
     else if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
