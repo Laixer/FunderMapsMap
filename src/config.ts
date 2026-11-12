@@ -16,4 +16,9 @@ export const BUILDINGS_3D = {
   attribution: env.VITE_3D_ATTRIBUTION ??
     '3D-panden <a href="https://www.pdok.nl/introductie/-/article/3d-basisvoorziening" target="_blank" rel="noopener">3D Basisvoorziening</a> (Kadaster), CC BY 4.0',
 };
+/**
+ * The map's address where logging in works: the login cookie belongs to this site (fundermaps.com), so on any other
+ * name the login pages forward to the same page here.
+ */
+export const LOGIN_HOST = (env.VITE_LOGIN_HOST ?? 'https://maps.fundermaps.com').replace(/\/$/, '');
 export const COMMIT = env.VITE_GIT_COMMIT_HASH ?? 'dev';

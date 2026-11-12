@@ -1,28 +1,25 @@
 <script setup lang="ts">
-// The page: the map fills the window; the layer panel, the hover card, the info card and the status float over it.
-import { onMounted, reactive, ref, shallowRef } from 'vue';
-import { MapController, initialUi } from '@/map/controller';
-import LayerPanel from '@/components/LayerPanel.vue';
-import HoverCard from '@/components/HoverCard.vue';
-import InfoCard from '@/components/InfoCard.vue';
-import StatusPill from '@/components/StatusPill.vue';
-import ConsentModal from '@/components/ConsentModal.vue';
-import { parseRoute } from '@/map/route';
+// Which page the address asks for. There is no router: the map is one page that keeps its own address (map/route.ts),
+// the login pages are separate full page loads, and anything else is the 404.
+import { defineAsyncComponent } from 'vue';
+import MapView from '@/pages/MapView.vue';
+import { pageOf } from '@/pages/page';
+import { LOGIN_HOST } from '@/config';
+import { onLoginHost } from '@/api/session';
 
-const ui = reactive(initialUi());
-const mapEl = ref<HTMLElement>();
-const ctl = shallowRef<MapController>();
-
-onMounted(async () => {
-  ctl.value = await MapController.create(mapEl.value!, ui, parseRoute());
-});
+const AuthPages = defineAsyncComponent(() => import('@/pages/AuthPages.vue'));
+const NotFound = defineAsyncComponent(() => import('@/pages/NotFound.vue'));
+const page = pageOf(location.pathname);
+// the old addresses of the forgot-password page
+if (page === 'old-reset') location.replace('/forgot-password');
+// the login cookie only works on the login host's site: the same page there
+const forwarded = (page === 'login' || page === 'forgot-password' || page === 'reset-password' || page === 'account') && !onLoginHost();
+if (forwarded) location.replace(`${LOGIN_HOST}${location.pathname}${location.search}`);
 </script>
 
 <template>
-  <div ref="mapEl" class="map"></div>
-  <LayerPanel v-if="ctl" :ui="ui" :ctl="ctl" />
-  <HoverCard :tip="ui.tooltip" />
-  <InfoCard v-if="ui.info" :info="ui.info" @close="ctl?.select(null)" />
-  <StatusPill :status="ui.status" />
-  <ConsentModal v-if="ui.mapset?.consent" :key="ui.mapset.id" :mapset="ui.mapset" />
+  <template v-if="forwarded || page === 'old-reset'"></template>
+  <MapView v-else-if="page === 'map'" />
+  <NotFound v-else-if="page === 'not-found'" />
+  <AuthPages v-else :page="page" />
 </template>

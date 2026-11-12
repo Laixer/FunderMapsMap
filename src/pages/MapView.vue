@@ -1,0 +1,30 @@
+<script setup lang="ts">
+// The map page: the map fills the window; the layer panel, the hover card, the info card and the status float over it.
+import { onMounted, reactive, ref, shallowRef } from 'vue';
+import { MapController, initialUi } from '@/map/controller';
+import LayerPanel from '@/components/LayerPanel.vue';
+import HoverCard from '@/components/HoverCard.vue';
+import InfoCard from '@/components/InfoCard.vue';
+import StatusPill from '@/components/StatusPill.vue';
+import ConsentModal from '@/components/ConsentModal.vue';
+import { parseRoute } from '@/map/route';
+import { loadSession } from '@/api/session';
+
+const ui = reactive(initialUi());
+const mapEl = ref<HTMLElement>();
+const ctl = shallowRef<MapController>();
+
+onMounted(async () => {
+  void loadSession();
+  ctl.value = await MapController.create(mapEl.value!, ui, parseRoute());
+});
+</script>
+
+<template>
+  <div ref="mapEl" class="map"></div>
+  <LayerPanel v-if="ctl" :ui="ui" :ctl="ctl" />
+  <HoverCard :tip="ui.tooltip" />
+  <InfoCard v-if="ui.info" :info="ui.info" @close="ctl?.select(null)" />
+  <StatusPill :status="ui.status" />
+  <ConsentModal v-if="ui.mapset?.consent" :key="ui.mapset.id" :mapset="ui.mapset" />
+</template>

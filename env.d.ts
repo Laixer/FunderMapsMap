@@ -13,6 +13,8 @@ interface ImportMetaEnv {
   readonly VITE_3D_ATTRIBUTION?: string;
   /** PDOK Locatieserver base */
   readonly VITE_PDOK_LOCATIONSERVICE?: string;
+  /** the map's address on the login cookie's site, e.g. https://maps.fundermaps.com */
+  readonly VITE_LOGIN_HOST?: string;
   readonly VITE_GIT_COMMIT_HASH?: string;
 }
 

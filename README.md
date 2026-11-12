@@ -33,6 +33,11 @@ pnpm build      # type check + production build into dist/
   set, note, disclaimer, centre and fence. `/map/<mapset>/building/<pand id>(/<panel>)` opens a building on it; the
   current map app's old forms (`/kaart/…`, `…/gebouw/…`) and `?lat=…&lng=…` work too. The camera is in the hash
   (`src/map/route.ts`).
+- **Login:** the session is the API's cookie (Better Auth), nothing of it is kept here. `src/api/session.ts` asks
+  `/api/user/me` once; without a session the visitor is a guest. The login pages are the current map app's:
+  `/login`, `/forgot-password`, `/reset-password`, `/account` (passkeys, sign-out), plus the profile and password
+  dialogs behind the user menu (`src/pages/AuthPages.vue`, `src/api/auth.ts`). The cookie belongs to the login host's
+  site, so on any other host name the map stays a guest's map and the login pages forward to `VITE_LOGIN_HOST`.
 - **Search:** PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 
@@ -45,6 +50,7 @@ No private data lives in this repository or the bundle.
 | `VITE_TILESERVER_URL` | `https://tiles.fundermaps.com` |
 | `VITE_BASEMAP_STYLE` | `<tileserver>/style/fundermaps-basemap` |
 | `VITE_API_URL` | `https://api.fundermaps.com` |
+| `VITE_LOGIN_HOST` | `https://maps.fundermaps.com` |
 | `VITE_PDOK_LOCATIONSERVICE` | `https://api.pdok.nl/bzk/locatieserver/search/v3_1` |
 | `VITE_3D_URL` | `https://api.pdok.nl/kadaster/3d-basisvoorziening/ogc/v1/collections/gebouwen/` |
 | `VITE_3D_ROOT` | `3dtiles?f=json` (3D BAG: `tileset.json`) |

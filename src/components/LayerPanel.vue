@@ -3,10 +3,13 @@
 import { ref } from 'vue';
 import type { MapController, UiState } from '@/map/controller';
 import SearchBox from './SearchBox.vue';
+import UserMenu from './UserMenu.vue';
+import AccountDialog from './AccountDialog.vue';
 
 const props = defineProps<{ ui: UiState; ctl: MapController }>();
 const collapsed = ref(matchMedia('(max-width: 640px)').matches);
 const toggle = () => { collapsed.value = !collapsed.value; };
+const dialog = ref<'profile' | 'password' | null>(null);
 const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputElement).checked ? '2026' : 'current');
 </script>
 
@@ -20,6 +23,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
         <h1>Funderingskaart</h1>
         <p>{{ ui.mapset?.name ?? 'De funderingen van Nederland in 3D' }}</p>
       </div>
+      <UserMenu @profile="dialog = 'profile'" @password="dialog = 'password'" />
       <button class="icon" :aria-label="ui.mode === 'dark' ? 'Lichte weergave' : 'Donkere weergave'" @click="ctl.toggleMode()">
         <svg v-if="ui.mode === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></svg>
@@ -66,11 +70,14 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
       </section>
     </div>
   </aside>
+  <AccountDialog v-if="dialog" :key="dialog" :kind="dialog" @close="dialog = null" />
 </template>
 
 <style scoped>
-.panel { position: absolute; z-index: 3; top: 14px; left: 14px; width: 348px; max-height: calc(100% - 64px); display: flex; flex-direction: column; overflow: hidden; }
-.brand { display: flex; align-items: center; gap: 10px; padding: 14px 12px 10px 14px; }
+.panel { position: absolute; z-index: 3; top: 14px; left: 14px; width: 348px; max-height: calc(100% - 64px); display: flex; flex-direction: column; }
+.brand { position: relative; z-index: 2; }
+.brand { display: flex; align-items: center; gap: 6px; padding: 14px 10px 10px 14px; }
+.brand .mark { margin-right: 4px; }
 .mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); flex: none; }
 .mark svg { width: 22px; height: 22px; }
 .titles { flex: 1; min-width: 0; }
