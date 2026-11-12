@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Left panel: brand, address search, subject tabs, layer list, legend with counts, and the display switches.
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import type { MapController, UiState } from '@/map/controller';
 import SearchBox from './SearchBox.vue';
 import UserMenu from './UserMenu.vue';
@@ -10,6 +10,8 @@ const props = defineProps<{ ui: UiState; ctl: MapController }>();
 const collapsed = ref(matchMedia('(max-width: 640px)').matches);
 const toggle = () => { collapsed.value = !collapsed.value; };
 const dialog = ref<'profile' | 'password' | null>(null);
+// on a phone the building's panel needs the room: the layer panel folds when a building opens
+watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640px)').matches) collapsed.value = true; });
 const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputElement).checked ? '2026' : 'current');
 </script>
 
@@ -67,13 +69,14 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
       </section>
       <section class="settings">
         <div class="switches">
-          <label class="switch"><input type="checkbox" :checked="ui.shadows" @change="ctl.setShadows(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Schaduwen</label>
+          <label class="switch"><input type="checkbox" :checked="!ui.flat" @change="ctl.setView(!($event.target as HTMLInputElement).checked)"><span class="knob"></span>3D-panden</label>
+          <label class="switch" :class="{ off: ui.flat }"><input type="checkbox" :checked="ui.shadows" :disabled="ui.flat" @change="ctl.setShadows(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Schaduwen</label>
           <label class="switch"><input type="checkbox" :checked="ui.context" @change="ctl.setContext(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Omgeving</label>
           <label class="switch"><input type="checkbox" :checked="ui.clusters" @change="ctl.setClusters(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bouwkundige eenheid</label>
           <label class="switch"><input type="checkbox" :checked="ui.palette === '2026'" @change="onPalette"><span class="knob"></span>Kleuren 2026</label>
           <label v-if="ui.owner" class="switch owner"><input type="checkbox" :checked="ui.ownerOnly" @change="ctl.setOwnerOnly(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Filter op eigendom</label>
         </div>
-        <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien.</p>
+        <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien. Zonder 3D-panden is de kaart lichter voor telefoon en oudere computers.</p>
       </section>
     </div>
   </aside>
@@ -88,7 +91,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
 .mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); flex: none; }
 .mark svg { width: 22px; height: 22px; }
 .titles { flex: 1; min-width: 0; }
-h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titles p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .body { overflow: auto; padding: 0 14px 14px; scrollbar-width: thin; }
 .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); margin: 2px 0 10px; }
@@ -123,6 +126,7 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .switch input:focus-visible + .knob { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
 .switch.owner { grid-column: 1 / -1; }
+.switch.off { opacity: .5; cursor: default; }
 .picker { display: grid; gap: 4px; margin: 2px 0 10px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .picker select { font: inherit; font-size: 13.5px; font-weight: 550; letter-spacing: 0; text-transform: none; color: var(--ink); padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-strong); }
 .notice { margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--raise); font-size: 12.5px; color: var(--ink-2); }
@@ -132,5 +136,12 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .about .md :deep(p) { margin: 0 0 8px; }
 @media (max-width: 640px) {
   .panel { left: 8px; right: 54px; top: 8px; width: auto; max-height: 58%; }
+  .brand { padding: 10px 8px 8px 10px; }
+  .titles p { display: none; }
+  h1 { font-size: 15px; }
+  /* the layers sit over the map here: nothing of it shows through */
+  .panel:not(.collapsed) { background: var(--solid); }
+  .layer { padding: 10px; }
+  .switches { grid-template-columns: 1fr; gap: 12px; }
 }
 </style>

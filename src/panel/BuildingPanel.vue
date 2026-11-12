@@ -2,7 +2,7 @@
 // The building panel of a logged-in user: everything the current map app shows for a building. A main view with the
 // key facts and the ways on, and one view per subject (Pand, Locatie, Fundering, Funderingsrisico, Onderzoek, Herstel,
 // Incidenten); the subject is in the address (/map/<mapset>/building/<pand>/<panel>).
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type { UiState } from '@/map/controller';
 import { parseRoute, writeRoute } from '@/map/route';
 import { addressLabel, documentLink, loadPanel, pdfReport, save, type PanelData } from './data';
@@ -10,7 +10,7 @@ import { NO_DATA, RECOVERY_SAMPLE_FIELDS, SAMPLE_GROUPS, enumLabel, raw, rows, s
 import StatisticsDialog from './StatisticsDialog.vue';
 
 const props = defineProps<{ pand: string; info: NonNullable<UiState['info']> }>();
-defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: [] }>();
 
 const VIEWS = ['building', 'location', 'foundation', 'foundation-risk', 'inquiry', 'recovery', 'incidents'] as const;
 type View = 'main' | (typeof VIEWS)[number];
@@ -38,10 +38,23 @@ watch(() => props.pand, (pand, old) => {
 }, { immediate: true });
 onBeforeUnmount(() => abort?.abort());
 
+// keyboard: the panel takes the focus when it opens (a screen reader then reads the address), each view moves it to
+// its heading, and Escape goes back a view or closes the panel (not while a dialog is open: that closes itself)
+const root = ref<HTMLElement>();
+const heading = ref<HTMLElement>();
+onMounted(() => heading.value?.focus({ preventScroll: true }));
+function onKey(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('dialog[open]') || note.value) return;
+  if (view.value !== 'main') go('main'); else emit('close');
+}
+onMounted(() => document.addEventListener('keydown', onKey));
+onBeforeUnmount(() => document.removeEventListener('keydown', onKey));
+
 function go(v: View) {
   view.value = v;
   failure.value = null;
   writeRoute({ ...parseRoute(), panel: v === 'main' ? null : v }, false);
+  void nextTick(() => (root.value?.querySelector<HTMLElement>('.body h3, .body .way') ?? heading.value)?.focus({ preventScroll: true }));
 }
 // a report view with nothing to show (an old link) falls back to the main view once the reports are in
 watch(() => [data.value?.reportsReady, view.value], () => {
@@ -157,11 +170,11 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
 </script>
 
 <template>
-  <aside class="bp glass" aria-label="Pandinformatie">
+  <aside ref="root" class="bp glass" aria-label="Pandinformatie">
     <header>
       <div>
         <p class="eyebrow">{{ info.eyebrow }}</p>
-        <h2>{{ title }}</h2>
+        <h2 ref="heading" tabindex="-1">{{ title }}</h2>
         <p class="sub">{{ postal }}</p>
         <p class="pand" title="BAG Pand ID">{{ pand }}</p>
       </div>
@@ -202,24 +215,24 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
       </template>
 
       <template v-else-if="view === 'building'">
-        <h3>Pandinformatie</h3>
+        <h3 tabindex="-1">Pandinformatie</h3>
         <dl class="wide"><template v-for="r in buildingRows" :key="r.field"><dt>{{ r.label }}</dt><dd :class="{ none: r.empty }">{{ r.value }}</dd></template></dl>
       </template>
 
       <template v-else-if="view === 'location'">
-        <h3>Locatie-informatie</h3>
+        <h3 tabindex="-1">Locatie-informatie</h3>
         <dl class="wide"><template v-for="[k, v] in locationRows" :key="k"><dt>{{ k }}</dt><dd :class="{ none: v === NO_DATA }">{{ v }}</dd></template></dl>
         <a class="out" :href="`https://bagviewer.kadaster.nl/lvbag/bag-viewer/?objectId=${pand}`" target="_blank" rel="noopener">BAG Viewer</a>
       </template>
 
       <template v-else-if="view === 'foundation'">
-        <h3>Fundering</h3>
+        <h3 tabindex="-1">Fundering</h3>
         <div class="hero plain"><div><small>Type fundering</small><strong>{{ show('analysis', 'foundationType', raw(a, 'foundationType')) }}</strong></div></div>
         <dl class="wide"><template v-for="r in foundationRows" :key="r.field"><dt>{{ r.label }}</dt><dd :class="{ none: r.empty }">{{ r.value }}</dd></template></dl>
       </template>
 
       <template v-else-if="view === 'foundation-risk'">
-        <h3>Funderingsrisico</h3>
+        <h3 tabindex="-1">Funderingsrisico</h3>
         <section v-for="g in riskGroups" :key="g.title" class="risk">
           <p class="section">{{ g.title }}</p>
           <div class="letter-row"><span class="letter" :class="g.letter ? `r-${g.letter}` : 'r-none'">{{ g.letter ? g.letter.toUpperCase() : '–' }}</span><div><small>{{ g.risk.label }}</small><strong :class="{ none: g.risk.empty }">{{ g.risk.value }}</strong></div></div>
@@ -228,7 +241,7 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
       </template>
 
       <template v-else-if="view === 'inquiry' && inquiry">
-        <h3>Onderzoeksinformatie</h3>
+        <h3 tabindex="-1">Onderzoeksinformatie</h3>
         <div v-if="data.inquiries.length > 1" class="pager">
           <button class="icon" aria-label="Vorige" :disabled="page.inquiry === 0" @click="page.inquiry--">‹</button><span>{{ page.inquiry + 1 }} van {{ data.inquiries.length }}</span>
           <button class="icon" aria-label="Volgende" :disabled="page.inquiry >= data.inquiries.length - 1" @click="page.inquiry++">›</button>
@@ -245,7 +258,7 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
       </template>
 
       <template v-else-if="view === 'recovery' && recovery">
-        <h3>Herstelinformatie</h3>
+        <h3 tabindex="-1">Herstelinformatie</h3>
         <div v-if="data.recoveries.length > 1" class="pager">
           <button class="icon" aria-label="Vorige" :disabled="page.recovery === 0" @click="page.recovery--">‹</button><span>{{ page.recovery + 1 }} van {{ data.recoveries.length }}</span>
           <button class="icon" aria-label="Volgende" :disabled="page.recovery >= data.recoveries.length - 1" @click="page.recovery++">›</button>
@@ -262,7 +275,7 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
       </template>
 
       <template v-else-if="view === 'incidents' && incident">
-        <h3>Incidentrapportage</h3>
+        <h3 tabindex="-1">Incidentrapportage</h3>
         <div v-if="data.incidents.length > 1" class="pager">
           <button class="icon" aria-label="Vorige" :disabled="page.incidents === 0" @click="page.incidents--">‹</button><span>{{ page.incidents + 1 }} van {{ data.incidents.length }}</span>
           <button class="icon" aria-label="Volgende" :disabled="page.incidents >= data.incidents.length - 1" @click="page.incidents++">›</button>
@@ -304,6 +317,7 @@ h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.015em; lin
 .pand { margin: 4px 0 0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
 .body { overflow: auto; padding: 14px 16px 16px; display: grid; gap: 10px; scrollbar-width: thin; }
 h3 { margin: 0; font-size: 15px; font-weight: 650; }
+h2:focus, h3:focus { outline: none; }
 h4 { margin: 0; font-size: 14px; font-weight: 620; overflow-wrap: anywhere; }
 p { margin: 0; }
 .muted { color: var(--ink-2); font-size: 13.5px; }
@@ -356,5 +370,11 @@ footer { padding: 10px 16px 14px; border-top: 1px solid var(--line); display: gr
 .notebox { width: min(520px, 100%); max-height: 70vh; overflow: auto; padding: 18px 20px; display: grid; gap: 14px; background: var(--solid); }
 .notebox p { font-size: 14px; line-height: 1.55; white-space: pre-line; }
 .notebox .secondary { justify-self: end; }
-@media (max-width: 640px) { .bp { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 62%; z-index: 5; } }
+@media (max-width: 640px) {
+  .bp { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 68%; z-index: 5; border-radius: var(--radius) var(--radius) 0 0; background: var(--solid); }
+  .way { padding: 12px; }
+  .back { padding: 6px 0; }
+  dl.wide { grid-template-columns: 1fr; gap: 2px; }
+  dl.wide dd { margin-bottom: 8px; }
+}
 </style>

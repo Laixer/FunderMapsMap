@@ -67,5 +67,5 @@ summary { cursor: pointer; font-size: 12px; font-weight: 650; letter-spacing: .0
 .more { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
 .more .chip { margin-left: 4px; }
 .notice { margin: 12px 0 0; font-size: 13px; color: var(--ink-2); }
-@media (max-width: 640px) { .info { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 52%; z-index: 5; } }
+@media (max-width: 640px) { .info { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 56%; z-index: 5; border-radius: var(--radius) var(--radius) 0 0; background: var(--solid); } }
 </style>

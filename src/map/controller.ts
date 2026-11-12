@@ -43,6 +43,8 @@ export interface UiState {
   mapset: null | { id: string; name: string; note: string; consent: string };
   /** the mapsets to choose from (a user's organisation's), for the picker */
   mapsets: { id: string; slug: string; name: string }[];
+  /** buildings as plain blocks from our own tiles instead of 3D models: the visitor's choice, or the device's default */
+  flat: boolean;
   /** the organisation whose buildings "Filter op eigendom" keeps, and whether it is on */
   owner: string | null;
   ownerOnly: boolean;
@@ -64,7 +66,7 @@ export function initialUi(): UiState {
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, notice: '',
+    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, notice: '',
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -167,6 +169,8 @@ export class MapController {
    * BAG cannot be reached (on 2026-10-21 it could not, from anywhere we tested). Back to 3D as soon as it answers.
    */
   private flat = false;
+  /** flat because it was chosen (or is this device's default), not because the 3D models cannot be reached */
+  private wantFlat = false;
   private flatLayers: string[] = [];
   private flatSelected: { id: string; props: Props } | null = null;
 
@@ -257,6 +261,11 @@ export class MapController {
       const forced = new URLSearchParams(location.search).get('shadows');
       this.layer.shadows = forced ? forced === 'on' : !this.layer.software;
       ui.shadows = this.layer.shadows;
+      // 3D or blocks: what the visitor chose before; else blocks on a phone and without a GPU, where the 3D models
+      // cost too much (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other.
+      const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
+      this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.layer.software || matchMedia('(max-width: 640px)').matches));
+      ui.flat = this.wantFlat;
       this.applyMode(false);
       if (intro) this.map.easeTo({ ...start, duration: 3200, easing: (t) => 1 - Math.pow(1 - t, 3) });
       else this.onMoveEnd();
@@ -327,6 +336,10 @@ export class MapController {
   // ---- 3D tiles -----------------------------------------------------------------------------------------------------
   private async updateTiles() {
     if (!this.map.getLayer(this.layer.id)) return this.renderStatus();
+    if (this.wantFlat) {
+      if (!this.flat) this.setFlat(true);
+      return this.renderStatus();
+    }
     if (this.map.getZoom() < MIN_ZOOM_3D) return this.renderStatus();
     const view = this.map.getBounds();
     const seq = ++this.walkSeq;
@@ -501,6 +514,25 @@ export class MapController {
     if (this.map.getLayer(this.layer.id)) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
     this.renderFlat();
     this.renderStatus();
+  }
+
+  /** the visitor's choice between the 3D models and plain blocks; remembered in this browser */
+  setView(flat: boolean) {
+    store.set('fm-view', flat ? 'flat' : '3d');
+    this.wantFlat = this.ui.flat = flat;
+    if (flat) {
+      // the 3D models go: nothing of them is kept in memory while the blocks are shown
+      this.walkSeq++;
+      this.queue.length = 0;
+      this.setHover(null);
+      for (const e of this.entries.values()) if (e.view) this.layer.removeTile(e.view);
+      this.entries.clear();
+      this.entryOfView.clear();
+      this.setFlat(true);
+    } else {
+      this.setFlat(false);
+      void this.updateTiles();
+    }
   }
 
   /** the active theme's layers as fill-extrusions on our tiles; the first layer of the theme is drawn on top */
@@ -797,7 +829,8 @@ export class MapController {
     const panden = ready.reduce((s, e) => s + (e.view?.tile.buildings ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
-    if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
+    if (this.wantFlat) text = this.map.getZoom() < 13 ? 'Zoom in voor de panden' : 'Panden als blokken';
+    else if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
     else text = `${nf.format(panden)} panden in 3D · ${ready.length} tegels · ${nf1.format(mb)} MB`;

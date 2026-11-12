@@ -22,7 +22,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div ref="mapEl" class="map"></div>
+  <div ref="mapEl" class="map" role="application" aria-label="Kaart van Nederland met de funderingen per pand"></div>
   <LayerPanel v-if="ctl" :ui="ui" :ctl="ctl" />
   <HoverCard :tip="ui.tooltip" />
   <!-- a user gets the full building panel; a guest the card with what the map itself knows, and the way to log in -->

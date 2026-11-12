@@ -51,6 +51,13 @@ pnpm build      # type check + production build into dist/
 - **Where you were:** the last position is remembered as the current map app does it (`src/map/position.ts`): with the
   account for a user (`/api/user/metadata`, the same keys), in the browser for a guest. A building or a position in
   the address wins.
+- **3D or blocks:** the "3D-panden" switch chooses between the 3D models and flat mode (our own tiles as blocks); the
+  choice is remembered. Without a choice a phone and a device without a GPU start with blocks, everything else with
+  3D; `?view=3d|flat` tries the other once. Flat mode is still the fallback when the 3D source cannot be reached.
+- **Phone:** below 640 px the layer panel folds (and folds again when a building opens), the building's panel and
+  card are sheets from the bottom, lists stack, touch targets are 40 px.
+- **Keyboard:** the building panel takes the focus when it opens, each view moves it to its heading, Escape goes back
+  a view and then closes the panel; dialogs are native `<dialog>`s.
 - **Search:** PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 
