@@ -35,6 +35,12 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
     <SearchBox :ctl="ctl" />
     <div v-show="!collapsed" class="body">
       <p v-if="ui.notice" class="notice" role="status">{{ ui.notice }}</p>
+      <label v-if="ui.mapsets.length > 1" class="picker">Kaart
+        <select :value="ui.mapsets.find((m) => m.id === ui.mapset?.id)?.slug ?? ''" @change="ctl.openMapset(($event.target as HTMLSelectElement).value)">
+          <option v-if="!ui.mapset" value="" disabled>Kies een kaart</option>
+          <option v-for="m in ui.mapsets" :key="m.id" :value="m.slug">{{ m.name }}</option>
+        </select>
+      </label>
       <details v-if="ui.mapset?.note" class="about">
         <summary>Over deze kaart</summary>
         <div class="md" v-html="ui.mapset.note"></div>
@@ -65,6 +71,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
           <label class="switch"><input type="checkbox" :checked="ui.context" @change="ctl.setContext(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Omgeving</label>
           <label class="switch"><input type="checkbox" :checked="ui.clusters" @change="ctl.setClusters(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bouwkundige eenheid</label>
           <label class="switch"><input type="checkbox" :checked="ui.palette === '2026'" @change="onPalette"><span class="knob"></span>Kleuren 2026</label>
+          <label v-if="ui.owner" class="switch owner"><input type="checkbox" :checked="ui.ownerOnly" @change="ctl.setOwnerOnly(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Filter op eigendom</label>
         </div>
         <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien.</p>
       </section>
@@ -115,6 +122,9 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
 .switch input:checked + .knob::after { transform: translateX(12px); }
 .switch input:focus-visible + .knob { outline: 2px solid var(--accent); outline-offset: 2px; }
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
+.switch.owner { grid-column: 1 / -1; }
+.picker { display: grid; gap: 4px; margin: 2px 0 10px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.picker select { font: inherit; font-size: 13.5px; font-weight: 550; letter-spacing: 0; text-transform: none; color: var(--ink); padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-strong); }
 .notice { margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--raise); font-size: 12.5px; color: var(--ink-2); }
 .about { margin: 0 0 10px; border-radius: 10px; background: var(--raise); padding: 7px 10px; font-size: 13px; }
 .about summary { cursor: pointer; font-weight: 600; color: var(--ink-2); }

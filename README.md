@@ -45,6 +45,12 @@ pnpm build      # type check + production build into dist/
   current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest keeps
   the card with what the map itself knows, and the way to log in. The analysis and statistics calls are the billed
   ones, as today.
+- **A user's own mapsets:** with a login the organisation's mapsets come from `/api/mapset`; a picker in the panel
+  switches between them, and an address without a mapset opens the one looked at last. "Filter op eigendom" keeps only
+  the buildings whose owner in our tiles is the user's organisation.
+- **Where you were:** the last position is remembered as the current map app does it (`src/map/position.ts`): with the
+  account for a user (`/api/user/metadata`, the same keys), in the browser for a guest. A building or a position in
+  the address wins.
 - **Search:** PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 
