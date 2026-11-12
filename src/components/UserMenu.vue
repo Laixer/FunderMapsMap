@@ -47,7 +47,7 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside); do
 
 <style scoped>
 .user { position: relative; flex: none; }
-.login { border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--ink); }
+.login { border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 5px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--ink); }
 .login:hover:enabled { background: var(--raise); }
 .login:disabled { opacity: .5; }
 .avatar { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
