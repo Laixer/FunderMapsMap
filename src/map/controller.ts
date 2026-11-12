@@ -62,7 +62,8 @@ export interface UiState {
 export function initialUi(): UiState {
   return {
     mode: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
-    palette: store.get('fm-palette') === 'current' ? 'current' : '2026',
+    // shadows, the surroundings and the 2026 colours are simply on (Yorick 2026-11-12): no switches for them
+    palette: '2026',
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
@@ -199,6 +200,7 @@ export class MapController {
     const position = route.building || route.lat !== null || location.hash.length > 1 ? null : loadPosition(!!user);
     const [s, m, t, p] = await Promise.all([style, mapset, target, position]);
     if (route.mapset && !m) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet openbaar. U ziet alle lagen.`;
+    else if (user && !own.length && !m) ui.notice = 'Er zijn nog geen kaarten voor uw organisatie. U ziet alle lagen; neem contact op met FunderMaps voor een eigen kaart.';
     const all = m && !own.some((x) => x.id === m.id) ? [m, ...own] : own;
     ui.mapsets = all.map((x) => ({ id: x.id, slug: x.slug, name: x.name }));
     ui.owner = user?.organizations[0]?.name ?? null;
@@ -237,7 +239,7 @@ export class MapController {
     this.map.addControl(new ScaleControl({ maxWidth: 110 }), 'bottom-right');
     this.layer.lines = ui.lines;
     if (mapset) this.setMapset(mapset);
-    else { this.renderLayers(); this.renderLegend(); }
+    else { this.restoreTheme(); ui.group = this.theme.group; ui.themeId = this.theme.id; this.renderLayers(); this.renderLegend(); }
     // the address follows the map from here: canonical form (old /kaart/… and …/gebouw/… links), Back and Forward. An
     // address naming a mapset that did not open is left as it was.
     if (!route.mapset || mapset) writeRoute(this.route, false);
@@ -671,6 +673,7 @@ export class MapController {
     const themes = mapsetThemes(m.name, m.layers);
     this.catalog = themes.length ? { groups: [m.name], themes } : { groups: GROUPS, themes: THEMES };
     this.theme = this.catalog.themes[0];
+    this.restoreTheme();
     this.ui.groups = this.catalog.groups;
     this.ui.group = this.theme.group;
     this.ui.themeId = this.theme.id;
@@ -733,11 +736,19 @@ export class MapController {
   }
 
   // ---- settings -------------------------------------------------------------------------------------------------------
+  /** the layer chosen on this mapset (or on the map without one) the last time, when it still exists */
+  private restoreTheme() {
+    const id = store.get(`fm-layer-${this.mapset?.id ?? 'all'}`);
+    const t = id ? this.catalog.themes.find((x) => x.id === id) : undefined;
+    if (t) this.theme = t;
+  }
+
   setGroup(g: string) {
     if (g === this.ui.group) return;
     this.ui.group = g;
     if (this.theme.group !== g) this.theme = this.catalog.themes.find((t) => t.group === g)!;
     this.ui.themeId = this.theme.id;
+    store.set(`fm-layer-${this.mapset?.id ?? 'all'}`, this.theme.id);
     this.applyTheme();
   }
 
@@ -745,6 +756,7 @@ export class MapController {
     if (id === this.theme.id) return;
     this.theme = this.catalog.themes.find((t) => t.id === id)!;
     this.ui.themeId = id;
+    store.set(`fm-layer-${this.mapset?.id ?? 'all'}`, id);
     this.applyTheme();
   }
 

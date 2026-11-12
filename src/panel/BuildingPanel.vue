@@ -144,7 +144,15 @@ function openSample(kind: 'inquirySample' | 'recoverySample', row: Row, label = 
 const sampleGroups = computed(() => {
   const s = sample.value;
   if (!s) return [];
-  if (s.kind === 'recoverySample') return [{ title: '', rows: rows('recoverySample', s.row, RECOVERY_SAMPLE_FIELDS, { recovery: 'Herstelnummer' }).map((r) => (r.field === 'recovery' ? { ...r, value: show('recoverySample', 'id', s.row.recovery_id ?? s.row.recovery), empty: false } : r)) }];
+  if (s.kind === 'recoverySample') {
+    // the sample row holds numbers for its recovery and its contractor: the recovery's number as it is, the
+    // contractor by the name on the recovery
+    const parent = data.value?.recoveries.find((r) => r.id === (s.row.recovery_id ?? s.row.recovery));
+    const contractor = parent?.attribution_contractor_name ? String(parent.attribution_contractor_name) : null;
+    return [{ title: '', rows: rows('recoverySample', s.row, RECOVERY_SAMPLE_FIELDS, { recovery: 'Herstelnummer' }).map((r) =>
+      r.field === 'recovery' ? { ...r, value: String(s.row.recovery_id ?? s.row.recovery ?? NO_DATA), empty: false }
+      : r.field === 'contractor' ? { ...r, value: contractor ?? NO_DATA, empty: !contractor } : r) }];
+  }
   return SAMPLE_GROUPS.map((g) => ({ title: g.title, rows: rows('inquirySample', s.row, g.fields) })).filter((g) => g.rows.some((r) => !r.empty));
 });
 

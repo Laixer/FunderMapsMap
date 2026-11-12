@@ -75,6 +75,9 @@ export function label(kind: Kind, field: string): string {
 export function raw(row: Row | null | undefined, field: string): unknown {
   if (!row) return undefined;
   const key = WIRE[field] ?? snake(field);
+  // a sample can name several causes and characteristics: the list, when the row has one with something in it
+  const list = row[`${key}_list`];
+  if (Array.isArray(list) && list.length) return list;
   if (key in row) return row[key];
   if (field === 'groundLevel' && 'groundlevel' in row) return row.groundlevel;
   if (field === 'woodEncroachement' && 'wood_encroachment' in row) return row.wood_encroachment;

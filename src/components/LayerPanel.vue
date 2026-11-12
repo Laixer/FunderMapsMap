@@ -12,7 +12,6 @@ const toggle = () => { collapsed.value = !collapsed.value; };
 const dialog = ref<'profile' | 'password' | null>(null);
 // on a phone the building's panel needs the room: the layer panel folds when a building opens
 watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640px)').matches) collapsed.value = true; });
-const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputElement).checked ? '2026' : 'current');
 </script>
 
 <template>
@@ -70,10 +69,7 @@ const onPalette = (e: Event) => props.ctl.setPalette((e.target as HTMLInputEleme
       <section class="settings">
         <div class="switches">
           <label class="switch"><input type="checkbox" :checked="!ui.flat" @change="ctl.setView(!($event.target as HTMLInputElement).checked)"><span class="knob"></span>3D-panden</label>
-          <label class="switch" :class="{ off: ui.flat }"><input type="checkbox" :checked="ui.shadows" :disabled="ui.flat" @change="ctl.setShadows(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Schaduwen</label>
-          <label class="switch"><input type="checkbox" :checked="ui.context" @change="ctl.setContext(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Omgeving</label>
           <label class="switch"><input type="checkbox" :checked="ui.clusters" @change="ctl.setClusters(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bouwkundige eenheid</label>
-          <label class="switch"><input type="checkbox" :checked="ui.palette === '2026'" @change="onPalette"><span class="knob"></span>Kleuren 2026</label>
           <label v-if="ui.owner" class="switch owner"><input type="checkbox" :checked="ui.ownerOnly" @change="ctl.setOwnerOnly(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Filter op eigendom</label>
         </div>
         <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien. Zonder 3D-panden is de kaart lichter voor telefoon en oudere computers.</p>
