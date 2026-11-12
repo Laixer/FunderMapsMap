@@ -38,6 +38,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--page); color: var(--ink); font: 14px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+/* the page never scrolls: the map fills the window and everything else floats over it or scrolls inside itself
+   (a focus on something half out of view used to push the whole page up, leaving an empty strip under the map) */
+html, body { overflow: hidden; overscroll-behavior: none; }
 #app, .map { position: absolute; inset: 0; }
 button { font: inherit; color: inherit; }
 .glass {
