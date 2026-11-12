@@ -744,7 +744,7 @@ export class MapController {
   private renderStatus() {
     const ready = [...this.entries.values()].filter((e) => e.state === 'ready');
     const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading + (this.walking ? 1 : 0);
-    const panden = ready.reduce((s, e) => s + (e.view?.tile.features.length ?? 0), 0);
+    const panden = ready.reduce((s, e) => s + (e.view?.tile.buildings ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
     if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';

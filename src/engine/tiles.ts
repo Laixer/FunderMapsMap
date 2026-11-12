@@ -56,6 +56,8 @@ export interface TilePart {
 
 export interface LoadedTile {
   features: TileFeature[];
+  /** distinct buildings: PDOK lists a building twice (its footprint and its model) or more (one row per building part) */
+  buildings: number;
   parts: TilePart[];
   bytes: number;
 }
@@ -195,7 +197,7 @@ export async function loadTile(url: string, frame: Frame, signal?: AbortSignal, 
 
   const parts = meshes.map((mesh) => buildPart(mesh, frame, count, transform));
   for (const mesh of meshes) mesh.geometry.dispose();
-  return { features, parts, bytes: buffer.byteLength };
+  return { features, buildings: new Set(features.map((f) => f.id)).size, parts, bytes: buffer.byteLength };
 }
 
 /** an exact key per source vertex position: the quantized int16 triple when there is one, else the float text */
