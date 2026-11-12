@@ -295,8 +295,112 @@ function buildPart(mesh: THREE.Mesh, frame: Frame, featureCount: number, t: numb
   const fill = featureTriStart.slice(0, featureCount);
   for (let t = 0; t < triangles; t++) featureTris[fill[vertexFeature[index[t * 3]]]++] = t;
 
-  const { edgePosition, edgeFeature } = buildEdges(position, index, positionKeys(pos), featureTriStart, featureTris);
+  const keys = positionKeys(pos);
+  if (!(globalThis as { __keepWinding?: boolean }).__keepWinding) orientOutward(position, normal, index, keys, featureTriStart, featureTris);
+  const { edgePosition, edgeFeature } = buildEdges(position, index, keys, featureTriStart, featureTris);
   return { position, normal, feature, index, featureBoxes, featureTriStart, featureTris, edgePosition, edgeFeature, bounds };
+}
+
+/**
+ * Makes every building's surface face outward, triangle by triangle.
+ *
+ * 3D BAG winds all its triangles outward. PDOK 3D Basisvoorziening does not: within one building neighbouring triangles
+ * face opposite ways, about one shared edge in four, and its normals follow the triangles, so they cannot settle it
+ * (its material is double-sided). Drawn with front faces only, a random part of the walls and roofs then went missing.
+ *
+ * Per building: triangles that share an edge are made to agree across it (two neighbours agree when they run along the
+ * shared edge in opposite directions), spreading from one triangle over each connected piece. Then the piece as a whole
+ * is turned outward by the sign of its volume. In the local frame y points south, a mirror of east/north/up, so an
+ * outward piece has a negative volume there. The vertex normals follow their triangle.
+ */
+function orientOutward(position: Float32Array, normal: Int8Array, index: Uint32Array, keys: (number | string)[],
+  featureTriStart: Uint32Array, featureTris: Uint32Array): void {
+  const ids = new Uint32Array(keys.length);
+  const seen = new Map<number | string, number>();
+  for (let i = 0; i < keys.length; i++) {
+    let id = seen.get(keys[i]);
+    if (id === undefined) { id = seen.size; seen.set(keys[i], id); }
+    ids[i] = id;
+  }
+  const flip = (t: number) => { const b = index[t * 3 + 1]; index[t * 3 + 1] = index[t * 3 + 2]; index[t * 3 + 2] = b; };
+  const features = featureTriStart.length - 1;
+  // per shared edge: the first two triangles on it, each with the direction it runs along the edge
+  const edgeA = new Map<number, number>();
+  const edgeB = new Map<number, number>();
+  const stack: number[] = [];
+  for (let f = 0; f < features; f++) {
+    const start = featureTriStart[f], end = featureTriStart[f + 1];
+    const count = end - start;
+    if (count === 0) continue;
+    edgeA.clear(); edgeB.clear();
+    // local triangle number k = 0..count-1; an entry is k * 2 + (1 when it runs from the lower to the higher id)
+    for (let k = 0; k < count; k++) {
+      const t = featureTris[start + k] * 3;
+      for (let e = 0; e < 3; e++) {
+        const p = ids[index[t + e]], q = ids[index[t + (e + 1) % 3]];
+        if (p === q) continue;
+        const key = p < q ? p * 4194304 + q : q * 4194304 + p;
+        const entry = k * 2 + (p < q ? 1 : 0);
+        if (!edgeA.has(key)) edgeA.set(key, entry);
+        else if (!edgeB.has(key)) edgeB.set(key, entry);
+        else edgeB.set(key, -1); // three or more triangles on one edge: no neighbour to follow there
+      }
+    }
+    const state = new Int8Array(count); // 0 = not reached, 1 = keep, 2 = flip
+    for (let seed = 0; seed < count; seed++) {
+      if (state[seed]) continue;
+      const piece: number[] = [];
+      state[seed] = 1;
+      stack.push(seed);
+      while (stack.length) {
+        const k = stack.pop()!;
+        piece.push(k);
+        const t = featureTris[start + k] * 3;
+        for (let e = 0; e < 3; e++) {
+          const p = ids[index[t + e]], q = ids[index[t + (e + 1) % 3]];
+          if (p === q) continue;
+          const key = p < q ? p * 4194304 + q : q * 4194304 + p;
+          const a = edgeA.get(key)!, b = edgeB.get(key);
+          if (b === undefined || b < 0) continue;
+          const mine = (a >> 1) === k ? a : b;
+          const other = (a >> 1) === k ? b : a;
+          const o = other >> 1;
+          if (o === k || state[o]) continue;
+          // as stored, they agree when their directions along the edge differ; a flipped triangle runs the other way
+          const agree = (mine & 1) !== (other & 1);
+          state[o] = agree ? state[k] : (state[k] === 1 ? 2 : 1);
+          stack.push(o);
+        }
+      }
+      for (const k of piece) if (state[k] === 2) flip(featureTris[start + k]);
+      // six times the signed volume of the piece, about its own first corner (keeps the numbers small)
+      const o3 = index[featureTris[start + piece[0]] * 3] * 3;
+      const ox = position[o3], oy = position[o3 + 1], oz = position[o3 + 2];
+      let volume = 0;
+      for (const k of piece) {
+        const t = featureTris[start + k] * 3;
+        const a = index[t] * 3, b = index[t + 1] * 3, c = index[t + 2] * 3;
+        const ax = position[a] - ox, ay = position[a + 1] - oy, az = position[a + 2] - oz;
+        const bx = position[b] - ox, by = position[b + 1] - oy, bz = position[b + 2] - oz;
+        const cx = position[c] - ox, cy = position[c + 1] - oy, cz = position[c + 2] - oz;
+        volume += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+      }
+      if (volume > 0) for (const k of piece) flip(featureTris[start + k]);
+    }
+    // normals follow their triangle: outward is against the triangle's own cross product in this mirrored frame
+    for (let k = 0; k < count; k++) {
+      const t = featureTris[start + k] * 3;
+      const a = index[t] * 3, b = index[t + 1] * 3, c = index[t + 2] * 3;
+      const ux = position[b] - position[a], uy = position[b + 1] - position[a + 1], uz = position[b + 2] - position[a + 2];
+      const vx = position[c] - position[a], vy = position[c + 1] - position[a + 1], vz = position[c + 2] - position[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      for (const v of [a, b, c]) {
+        if (nx * normal[v] + ny * normal[v + 1] + nz * normal[v + 2] > 0) {
+          normal[v] = -normal[v]; normal[v + 1] = -normal[v + 1]; normal[v + 2] = -normal[v + 2];
+        }
+      }
+    }
+  }
 }
 
 /**
