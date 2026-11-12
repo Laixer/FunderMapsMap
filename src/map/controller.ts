@@ -14,6 +14,7 @@ import AREA_LAYERS from '@/config/area-layers.json';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
+import { TreeData } from '@/data/trees';
 import { buildingInfo, type BuildingInfo } from '@/search/search';
 import { fenceExpression, fenceTest, listMapsets, loadMapset, type Mapset } from '@/map/mapsets';
 import { loadPosition, savePosition, type Position } from '@/map/position';
@@ -43,6 +44,8 @@ export interface UiState {
   mapset: null | { id: string; name: string; note: string; consent: string };
   /** the mapsets to choose from (a user's organisation's), for the picker */
   mapsets: { id: string; slug: string; name: string }[];
+  /** the trees of the BGT in the 3D view */
+  trees: boolean;
   /** buildings as plain blocks from our own tiles instead of 3D models: the visitor's choice, or the device's default */
   flat: boolean;
   /** the organisation whose buildings "Filter op eigendom" keeps, and whether it is on */
@@ -67,7 +70,7 @@ export function initialUi(): UiState {
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, notice: '',
+    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, trees: store.get('fm-trees') !== 'off', notice: '',
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -77,6 +80,8 @@ export function initialUi(): UiState {
 // ---- constants ------------------------------------------------------------------------------------------------------
 const START = { center: [4.4655, 51.9145] as [number, number], zoom: 15.5, pitch: 66, bearing: 72 };
 const MIN_ZOOM_3D = 13.5;
+/** trees are loaded from this zoom on: further out there are too many for what they add */
+const MIN_ZOOM_TREES = 15;
 /** load 3D tiles up to this many metres from the view centre: the far horizon of a tilted view stays empty */
 const tileDistance = (zoom: number) => Math.min(4500, Math.max(1200, 2200 * 2 ** (16 - zoom)));
 /** at most this many 3D tiles in memory; the farthest go first */
@@ -87,7 +92,7 @@ const NEUTRAL: Record<Mode, { noData: number; context: number }> = {
   light: { noData: 0xdcdfe4, context: 0xeeeff1 },
   dark: { noData: 0x4a525d, context: 0x2b313a },
 };
-const ATTRIBUTION = `${BUILDINGS_3D.attribution} · Gegevens FunderMaps`;
+const ATTRIBUTION = `${BUILDINGS_3D.attribution} · Bomen <a href="https://www.pdok.nl/introductie/-/article/basisregistratie-grootschalige-topografie-bgt-" target="_blank" rel="noopener">BGT</a> · Gegevens FunderMaps`;
 
 const nf = new Intl.NumberFormat('nl-NL');
 const nf1 = new Intl.NumberFormat('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -169,6 +174,8 @@ export class MapController {
    * Flat mode: our own `buildings` tiles drawn as blocks with the live map's rules (MapLibre fill-extrusion), when 3D
    * BAG cannot be reached (on 2026-10-21 it could not, from anywhere we tested). Back to 3D as soon as it answers.
    */
+  private trees: TreeData;
+  private treeCells = new Map<string, Float64Array>();
   private flat = false;
   /** flat because it was chosen (or is this device's default), not because the 3D models cannot be reached */
   private wantFlat = false;
@@ -222,6 +229,12 @@ export class MapController {
     this.frame = makeFrame(start.center[0], start.center[1]);
     this.layer = new BuildingLayer(this.frame);
     this.data = new BuildingData(TILESERVER, () => this.onData());
+    // the trees of each cell go to whichever scene is current (the scene starts over far across the country)
+    this.trees = new TreeData((key, lonLat) => {
+      if (lonLat) this.treeCells.set(key, lonLat); else this.treeCells.delete(key);
+      this.layer.setTrees(key, lonLat);
+      this.renderStatus();
+    });
     this.map = new MapLibreMap({
       container,
       style,
@@ -319,6 +332,7 @@ export class MapController {
       this.data.update([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], [c.lng, c.lat]);
     }
     this.updateTiles();
+    this.updateTrees();
     savePosition(this.isUser, { lng: c.lng, lat: c.lat, zoom: this.map.getZoom(), pitch: this.map.getPitch(), bearing: this.map.getBearing() });
   }
 
@@ -338,6 +352,25 @@ export class MapController {
     this.layer.shadows = shadows;
     this.map.addLayer(this.layer, this.firstSymbol());
     this.layer.setMode(this.ui.mode);
+    for (const [key, lonLat] of this.treeCells) this.layer.setTrees(key, lonLat);
+  }
+
+  // ---- trees ----
+  /** trees belong to the 3D view, from close by: in 2D and from far away there are none */
+  private updateTrees() {
+    if (!this.ui.trees || this.wantFlat || this.flat || this.map.getZoom() < MIN_ZOOM_TREES) {
+      if (this.treeCells.size) this.trees.clear();
+      return;
+    }
+    const b = this.map.getBounds(), c = this.map.getCenter();
+    this.trees.update([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], [c.lng, c.lat]);
+  }
+
+  setTrees(on: boolean) {
+    this.ui.trees = on;
+    store.set('fm-trees', on ? 'on' : 'off');
+    this.updateTrees();
+    this.renderStatus();
   }
 
   // ---- 3D tiles -----------------------------------------------------------------------------------------------------
@@ -536,6 +569,7 @@ export class MapController {
       this.entries.clear();
       this.entryOfView.clear();
       this.setFlat(true);
+      this.updateTrees();
       // a 2D map is looked at from straight above
       this.map.easeTo({ pitch: 0, duration: 600 });
     } else {
@@ -851,7 +885,7 @@ export class MapController {
     else if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
-    else text = `${nf.format(panden)} panden in 3D · ${ready.length} tegels · ${nf1.format(mb)} MB`;
+    else text = `${nf.format(panden)} panden in 3D${this.layer.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
     this.ui.status = { text, busy: loading > 0 };
   }
 

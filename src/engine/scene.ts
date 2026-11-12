@@ -254,6 +254,92 @@ const DEPTH_VERTEX = /* glsl */ `${COMMON}
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }`;
 
+// ---- trees: one low-poly tree drawn once per tree point (instancing), lit like the buildings and fading into the
+// same haze. The trunk and the crown are one mesh with a colour per vertex; the crown takes its green from uniforms so
+// light and dark each have their own. ----
+const TREE_VERTEX = /* glsl */ `
+  attribute float part;
+  varying vec3 vNormal;
+  varying float vPart;
+  varying float vDepth;
+  varying float vShade;
+  void main() {
+    vec4 p = instanceMatrix * vec4(position, 1.0);
+    vNormal = normalize(mat3(instanceMatrix) * normal);
+    vPart = part;
+    // no two trees the same green: a little lighter or darker per tree
+    vShade = fract(sin(dot(instanceMatrix[3].xy, vec2(12.9898, 78.233))) * 43758.5453);
+    gl_Position = projectionMatrix * modelViewMatrix * p;
+    vDepth = gl_Position.w;
+  }`;
+const TREE_FRAGMENT = /* glsl */ `
+  uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
+  uniform vec3 uSkyColor;
+  uniform vec3 uGroundColor;
+  uniform vec3 uFogColor;
+  uniform float uFogNear;
+  uniform float uFogFar;
+  uniform vec3 uCrown;
+  uniform vec3 uTrunk;
+  varying vec3 vNormal;
+  varying float vPart;
+  varying float vDepth;
+  varying float vShade;
+  void main() {
+    vec3 n = normalize(vNormal);
+    float sun = max(dot(n, uSunDir), 0.0);
+    vec3 ambient = mix(uGroundColor, uSkyColor, 0.5 + 0.5 * n.z);
+    vec3 albedo = vPart > 0.5 ? uCrown * (0.86 + 0.28 * vShade) : uTrunk;
+    vec3 col = albedo * (ambient + uSunColor * sun);
+    col = mix(col, uFogColor, smoothstep(uFogNear, uFogFar, vDepth) * 0.92);
+    gl_FragColor = vec4(min(col, vec3(1.0)), 1.0);
+  }`;
+const TREE_DEPTH_VERTEX = /* glsl */ `
+  void main() { gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`;
+const TREE_DEPTH_FRAGMENT = /* glsl */ `void main() { gl_FragColor = vec4(1.0); }`;
+const TREE_COLORS: Record<Mode, { crown: string; trunk: string }> = {
+  light: { crown: '#6FA35B', trunk: '#8A7460' },
+  dark: { crown: '#5FAE6E', trunk: '#7A6B5D' },
+};
+
+/** a tree one metre tall, standing on z = 0: a trunk and a faceted crown; `part` is 0 on the trunk and 1 on the crown */
+function treeGeometry(): THREE.BufferGeometry {
+  const trunk = new THREE.CylinderGeometry(0.035, 0.05, 0.4, 5, 1, true);
+  trunk.rotateX(Math.PI / 2);
+  trunk.translate(0, 0, 0.2);
+  const crown = new THREE.IcosahedronGeometry(0.5, 1);
+  crown.scale(0.62, 0.62, 0.68);
+  crown.translate(0, 0, 0.66);
+  const parts = [trunk.toNonIndexed(), crown.toNonIndexed()];
+  const count = parts.reduce((n, g) => n + g.attributes.position.count, 0);
+  const position = new Float32Array(count * 3), normal = new Float32Array(count * 3), part = new Float32Array(count);
+  let at = 0;
+  parts.forEach((g, i) => {
+    g.computeVertexNormals(); // flat: every face its own normal
+    position.set(g.attributes.position.array as Float32Array, at * 3);
+    normal.set(g.attributes.normal.array as Float32Array, at * 3);
+    part.fill(i, at, at + g.attributes.position.count);
+    at += g.attributes.position.count;
+    g.dispose();
+  });
+  trunk.dispose(); crown.dispose();
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  out.setAttribute('part', new THREE.BufferAttribute(part, 1));
+  return out;
+}
+
+/**
+ * How tall to draw a tree. The BGT does not say, so every tree gets a height between 6 and 15 m that depends only on
+ * where it stands: the same tree is the same height on every visit, and a row of trees is not a row of clones.
+ */
+function treeHeight(lon: number, lat: number): number {
+  const h = Math.sin(lon * 91345.17 + lat * 47211.93) * 43758.5453;
+  return 6 + (h - Math.floor(h)) * 9;
+}
+
 export interface TileView {
   tile: LoadedTile;
   meshes: THREE.Mesh[];
@@ -294,6 +380,11 @@ export class BuildingLayer implements CustomLayerInterface {
   mvp = new THREE.Matrix4();
   inverse = new THREE.Matrix4();
   views = new Set<TileView>();
+  /** the trees, one instanced mesh per map cell */
+  private trees = new Map<string, THREE.InstancedMesh>();
+  private treeGeometry = treeGeometry();
+  private treeMaterial!: THREE.ShaderMaterial;
+  private treeDepth!: THREE.ShaderMaterial;
   shadows = true;
   /** building outlines on or off (the selected and hovered building keep theirs) */
   lines = true;
@@ -360,6 +451,13 @@ export class BuildingLayer implements CustomLayerInterface {
     this.ground.frustumCulled = false;
     this.ground.visible = false;
     this.scene.add(this.ground);
+    this.treeMaterial = new THREE.ShaderMaterial({
+      vertexShader: TREE_VERTEX, fragmentShader: TREE_FRAGMENT,
+      uniforms: { ...this.shared, uCrown: { value: new THREE.Vector3() }, uTrunk: { value: new THREE.Vector3() } },
+      // built in the mirrored local frame (y = south): both sides, so no face is lost to the reversed winding
+      side: THREE.DoubleSide,
+    });
+    this.treeDepth = new THREE.ShaderMaterial({ vertexShader: TREE_DEPTH_VERTEX, fragmentShader: TREE_DEPTH_FRAGMENT, side: THREE.DoubleSide, colorWrite: false });
     this.setMode('light');
   }
 
@@ -394,7 +492,41 @@ export class BuildingLayer implements CustomLayerInterface {
     this.shared.uShadowTint.value.copy(colorVec(l.shadowTint));
     this.shared.uShadowStrength.value = l.shadowStrength;
     this.shared.uEdgeOpacity.value = l.edgeOpacity;
+    this.treeMaterial.uniforms.uCrown.value.copy(colorVec(TREE_COLORS[mode].crown));
+    this.treeMaterial.uniforms.uTrunk.value.copy(colorVec(TREE_COLORS[mode].trunk));
     this.map?.triggerRepaint();
+  }
+
+  // ---- trees ----
+  /** the trees of one map cell (lon/lat pairs), or null to take the cell away */
+  setTrees(key: string, lonLat: Float64Array | null) {
+    const old = this.trees.get(key);
+    if (old) { this.scene.remove(old); old.dispose(); this.trees.delete(key); }
+    const n = lonLat ? lonLat.length / 2 : 0;
+    if (!lonLat || !n) { this.map?.triggerRepaint(); return; }
+    const mesh = new THREE.InstancedMesh(this.treeGeometry, this.treeMaterial, n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 0, 1);
+    for (let i = 0; i < n; i++) {
+      const lon = lonLat[i * 2], lat = lonLat[i * 2 + 1];
+      const h = treeHeight(lon, lat);
+      // every tree turned its own way, so the facets of the crowns do not line up down a street
+      q.setFromAxisAngle(up, (h * 12.9898) % (Math.PI * 2));
+      m.compose(this.toLocal(lon, lat), q, s.set(h, h, h));
+      mesh.setMatrixAt(i, m);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.matrixAutoUpdate = false;
+    // the instances spread over a whole cell: the one tree's own bounds must not decide whether the cell is drawn
+    mesh.frustumCulled = false;
+    this.trees.set(key, mesh);
+    this.scene.add(mesh);
+    this.map?.triggerRepaint();
+  }
+
+  get treeCount(): number {
+    let n = 0;
+    for (const t of this.trees.values()) n += t.count;
+    return n;
   }
 
   // ---- tiles ----
@@ -598,13 +730,14 @@ export class BuildingLayer implements CustomLayerInterface {
   /** screen position (CSS pixels) of a local point, null behind the camera */
   project(x: number, y: number, z: number): { x: number; y: number } | null {
     const v = new THREE.Vector4(x, y, z, 1).applyMatrix4(this.mvp);
-    if (v.w <= 0) return null;
+    // a layer that is not on the map (yet, or any more: the scene starts over far across the country) has no canvas
+    if (v.w <= 0 || !this.map) return null;
     const canvas = this.map.getCanvas();
     return { x: ((v.x / v.w + 1) / 2) * canvas.clientWidth, y: ((1 - v.y / v.w) / 2) * canvas.clientHeight };
   }
 
   prerender() {
-    this.shared.uShadowOn.value = this.shadows && this.views.size ? 1 : 0;
+    this.shared.uShadowOn.value = this.shadows && (this.views.size || this.trees.size) ? 1 : 0;
     this.ground.visible = false;
     if (!this.shared.uShadowOn.value) return;
     const zoom = this.map.getZoom();
@@ -635,12 +768,15 @@ export class BuildingLayer implements CustomLayerInterface {
       view.outlines.forEach((o) => (o.visible = false));
       view.xrays.forEach((o) => (o.visible = false));
     }
+    // the trees cast shadows too
+    for (const t of this.trees.values()) t.material = this.treeDepth;
     this.renderer.resetState();
     this.renderer.setRenderTarget(this.shadowTarget);
     this.renderer.clear(false, true, false);
     this.renderer.render(this.scene, cam);
     this.renderer.setRenderTarget(null);
     for (const [m, material] of swapped) m.material = material;
+    for (const t of this.trees.values()) t.material = this.treeMaterial;
     this.ground.position.set(target.x, target.y, 0);
     this.ground.scale.set(radius, radius, 1);
     this.ground.updateMatrix();
@@ -712,6 +848,7 @@ export class BuildingLayer implements CustomLayerInterface {
 
   // ---- picking: ray against each building's box first, then only that building's triangles ----
   pick(x: number, y: number, visible: (view: TileView, feature: number) => boolean): { view: TileView; feature: number } | null {
+    if (!this.map) return null;
     const canvas = this.map.getCanvas();
     const nx = (x / canvas.clientWidth) * 2 - 1;
     const ny = -(y / canvas.clientHeight) * 2 + 1;

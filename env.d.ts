@@ -15,6 +15,8 @@ interface ImportMetaEnv {
   readonly VITE_PDOK_LOCATIONSERVICE?: string;
   /** the map's address on the login cookie's site, e.g. https://maps.fundermaps.com */
   readonly VITE_LOGIN_HOST?: string;
+  /** BGT OGC API Features base (the trees) */
+  readonly VITE_BGT_URL?: string;
   readonly VITE_GIT_COMMIT_HASH?: string;
 }
 
