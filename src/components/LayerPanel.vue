@@ -72,7 +72,7 @@ watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640
           <label class="switch"><input type="checkbox" :checked="ui.clusters" @change="ctl.setClusters(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bouwkundige eenheid</label>
           <label v-if="ui.owner" class="switch owner"><input type="checkbox" :checked="ui.ownerOnly" @change="ctl.setOwnerOnly(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Filter op eigendom</label>
         </div>
-        <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien. Zonder 3D-panden is de kaart lichter voor telefoon en oudere computers.</p>
+        <p class="hint">Klik op een pand voor de gegevens · rechtermuisknop of Ctrl + slepen om te draaien. Zonder 3D-panden is de kaart plat (2D) en lichter voor telefoon en oudere computers.</p>
       </section>
     </div>
   </aside>
