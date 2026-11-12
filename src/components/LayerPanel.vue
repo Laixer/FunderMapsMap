@@ -80,14 +80,14 @@ watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640
 </template>
 
 <style scoped>
-.panel { position: absolute; z-index: 3; top: 14px; left: 14px; width: 348px; max-height: calc(100% - 64px); display: flex; flex-direction: column; }
+.panel { position: absolute; z-index: 3; top: 14px; left: 14px; width: 396px; max-height: calc(100% - 64px); display: flex; flex-direction: column; }
 .brand { position: relative; z-index: 2; }
 .brand { display: flex; align-items: center; gap: 6px; padding: 14px 10px 10px 14px; }
 .brand .mark { margin-right: 4px; }
 .mark { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); flex: none; }
 .mark svg { width: 22px; height: 22px; }
 .titles { flex: 1; min-width: 0; }
-h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titles p { margin: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .body { overflow: auto; padding: 0 14px 14px; scrollbar-width: thin; }
 .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); margin: 2px 0 10px; }
@@ -134,7 +134,8 @@ h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; whit
   .panel { left: 8px; right: 54px; top: 8px; width: auto; max-height: 58%; }
   .brand { padding: 10px 8px 8px 10px; }
   .titles p { display: none; }
-  h1 { font-size: 15px; }
+  .titles h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .titles { min-height: 1px; }
   /* the layers sit over the map here: nothing of it shows through */
   .panel:not(.collapsed) { background: var(--solid); }
   .layer { padding: 10px; }
