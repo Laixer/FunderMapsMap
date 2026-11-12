@@ -15,5 +15,6 @@ defineProps<{ status: UiState['status'] }>();
 .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 .status:not(.busy) .spinner { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 640px) { .status { left: 8px; bottom: auto; top: 128px; } }
+/* on a phone: under the folded panel, and behind it when it is open */
+@media (max-width: 640px) { .status { left: 8px; bottom: auto; top: 128px; z-index: 2; } }
 </style>

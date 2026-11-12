@@ -4,8 +4,8 @@
 import { ref } from 'vue';
 import type { UiState } from '@/map/controller';
 
-defineProps<{ info: NonNullable<UiState['info']> }>();
-defineEmits<{ close: [] }>();
+defineProps<{ info: NonNullable<UiState['info']>; guest?: boolean }>();
+defineEmits<{ close: []; login: [] }>();
 const copied = ref(false);
 const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => { copied.value = true; setTimeout(() => (copied.value = false), 1500); }, () => undefined);
 </script>
@@ -34,6 +34,7 @@ const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => {
       <summary>3D BAG</summary>
       <dl><template v-for="[k, v] in info.bag" :key="k"><dt>{{ k }}</dt><dd>{{ v }}</dd></template></dl>
     </details>
+    <p v-if="guest" class="more">Onderzoek, herstel, statistieken en het PDF-rapport van dit pand zie je als je bent ingelogd. <button class="chip" @click="$emit('login')">Inloggen</button></p>
     <div class="idline"><code>{{ info.id }}</code><button class="chip" @click="copy(info.id)">{{ copied ? 'Gekopieerd' : 'Kopiëren' }}</button></div>
   </aside>
 </template>
@@ -63,6 +64,8 @@ summary { cursor: pointer; font-size: 12px; font-weight: 650; letter-spacing: .0
 .idline code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
 .chip { border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 3px 10px; font-size: 12px; cursor: pointer; color: var(--ink-2); }
 .chip:hover { background: var(--raise); }
+.more { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
+.more .chip { margin-left: 4px; }
 .notice { margin: 12px 0 0; font-size: 13px; color: var(--ink-2); }
-@media (max-width: 640px) { .info { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 52%; z-index: 5; } }
+@media (max-width: 640px) { .info { left: 0; right: 0; top: auto; bottom: 0; width: auto; max-height: 56%; z-index: 5; border-radius: var(--radius) var(--radius) 0 0; background: var(--solid); } }
 </style>

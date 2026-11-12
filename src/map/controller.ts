@@ -15,7 +15,9 @@ import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
 import { buildingInfo, type BuildingInfo } from '@/search/search';
-import { fenceExpression, fenceTest, loadPublicMapset, type Mapset } from '@/map/mapsets';
+import { fenceExpression, fenceTest, listMapsets, loadMapset, type Mapset } from '@/map/mapsets';
+import { loadPosition, savePosition, type Position } from '@/map/position';
+import { loadSession } from '@/api/session';
 import { parseRoute, writeRoute, type Route } from '@/map/route';
 import { markdown } from '@/lib/markdown';
 import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
@@ -39,6 +41,13 @@ export interface UiState {
   clusters: boolean;
   /** the open mapset (/map/<slug>): its name, note and disclaimer as HTML */
   mapset: null | { id: string; name: string; note: string; consent: string };
+  /** the mapsets to choose from (a user's organisation's), for the picker */
+  mapsets: { id: string; slug: string; name: string }[];
+  /** buildings as plain blocks from our own tiles instead of 3D models: the visitor's choice, or the device's default */
+  flat: boolean;
+  /** the organisation whose buildings "Filter op eigendom" keeps, and whether it is on */
+  owner: string | null;
+  ownerOnly: boolean;
   /** a message above the layers, e.g. a mapset in the address that could not be opened */
   notice: string;
   legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string };
@@ -53,11 +62,12 @@ export interface UiState {
 export function initialUi(): UiState {
   return {
     mode: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
-    palette: store.get('fm-palette') === 'current' ? 'current' : '2026',
+    // shadows, the surroundings and the 2026 colours are simply on (Yorick 2026-11-12): no switches for them
+    palette: '2026',
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true, clusters: false, mapset: null, notice: '',
+    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, notice: '',
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -160,6 +170,8 @@ export class MapController {
    * BAG cannot be reached (on 2026-10-21 it could not, from anywhere we tested). Back to 3D as soon as it answers.
    */
   private flat = false;
+  /** flat because it was chosen (or is this device's default), not because the 3D models cannot be reached */
+  private wantFlat = false;
   private flatLayers: string[] = [];
   private flatSelected: { id: string; props: Props } | null = null;
 
@@ -172,19 +184,37 @@ export class MapController {
       .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
       .then((json) => prepareStyle(json, ui.mode))
       .catch(() => BASEMAP as any); // the plain style URL then; it is restyled once loaded
-    const mapset = route.mapset ? loadPublicMapset(route.mapset, AbortSignal.timeout(8000)).catch(() => null) : null;
     const target = route.building ? locate(route.building, AbortSignal.timeout(8000)) : null;
-    const [s, m, t] = await Promise.all([style, mapset, target]);
+    // who is looking decides which mapsets there are: a user has their organisation's, a guest only what a link names
+    const user = await loadSession();
+    const own = user ? await listMapsets(AbortSignal.timeout(8000)).catch(() => [] as Mapset[]) : [];
+    let wanted = route.mapset;
+    if (!wanted && own.length) {
+      // no mapset in the address: the one this user looked at last, else their first
+      const last = store.get('last-viewed-private-mapset') ?? store.get('last-viewed-public-mapset');
+      wanted = (own.find((x) => x.id === last) ?? own[0]).slug;
+    }
+    const listed = wanted ? own.find((x) => x.id === wanted || x.slug === wanted) : undefined;
+    const mapset = listed ?? (wanted ? loadMapset(wanted, !!user, AbortSignal.timeout(8000)).catch(() => null) : null);
+    // where the visitor last was, unless the address already says where to look
+    const position = route.building || route.lat !== null || location.hash.length > 1 ? null : loadPosition(!!user);
+    const [s, m, t, p] = await Promise.all([style, mapset, target, position]);
     if (route.mapset && !m) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet openbaar. U ziet alle lagen.`;
-    return new MapController(container, ui, s, route, m, t);
+    else if (user && !own.length && !m) ui.notice = 'Er zijn nog geen kaarten voor uw organisatie. U ziet alle lagen; neem contact op met FunderMaps voor een eigen kaart.';
+    const all = m && !own.some((x) => x.id === m.id) ? [m, ...own] : own;
+    ui.mapsets = all.map((x) => ({ id: x.id, slug: x.slug, name: x.name }));
+    ui.owner = user?.organizations[0]?.name ?? null;
+    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user);
   }
 
   private constructor(container: HTMLElement, private ui: UiState, style: any, route: Route, mapset: Mapset | null,
-    target: { pand: string; lon: number; lat: number } | null) {
-    const intro = location.hash.length <= 1;
+    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean) {
+    // the opening sweep is for a first visit; someone coming back to where they were just gets their view
+    const intro = location.hash.length <= 1 && !saved;
     // where to open (the hash, when there is one, wins inside MapLibre): the building, ?lat&lng, the mapset, Rotterdam
     const start = target ? { ...START, center: [target.lon, target.lat] as [number, number], zoom: 17.4, pitch: 60 }
       : route.lat !== null && route.lng !== null ? { ...START, center: [route.lng, route.lat] as [number, number], zoom: 17, pitch: 60 }
+      : saved ? { center: [saved.lng, saved.lat] as [number, number], zoom: saved.zoom, pitch: saved.pitch, bearing: saved.bearing }
       : mapset?.center ? { ...START, center: mapset.center, zoom: 15, pitch: 58 }
       : START;
     this.route = { ...route, building: target?.pand ?? route.building };
@@ -209,7 +239,7 @@ export class MapController {
     this.map.addControl(new ScaleControl({ maxWidth: 110 }), 'bottom-right');
     this.layer.lines = ui.lines;
     if (mapset) this.setMapset(mapset);
-    else { this.renderLayers(); this.renderLegend(); }
+    else { this.restoreTheme(); ui.group = this.theme.group; ui.themeId = this.theme.id; this.renderLayers(); this.renderLegend(); }
     // the address follows the map from here: canonical form (old /kaart/… and …/gebouw/… links), Back and Forward. An
     // address naming a mapset that did not open is left as it was.
     if (!route.mapset || mapset) writeRoute(this.route, false);
@@ -233,6 +263,11 @@ export class MapController {
       const forced = new URLSearchParams(location.search).get('shadows');
       this.layer.shadows = forced ? forced === 'on' : !this.layer.software;
       ui.shadows = this.layer.shadows;
+      // 3D or blocks: what the visitor chose before; else blocks on a phone and without a GPU, where the 3D models
+      // cost too much (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other.
+      const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
+      this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.layer.software || matchMedia('(max-width: 640px)').matches));
+      ui.flat = this.wantFlat;
       this.applyMode(false);
       if (intro) this.map.easeTo({ ...start, duration: 3200, easing: (t) => 1 - Math.pow(1 - t, 3) });
       else this.onMoveEnd();
@@ -279,6 +314,7 @@ export class MapController {
       this.data.update([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], [c.lng, c.lat]);
     }
     this.updateTiles();
+    savePosition(this.isUser, { lng: c.lng, lat: c.lat, zoom: this.map.getZoom(), pitch: this.map.getPitch(), bearing: this.map.getBearing() });
   }
 
   /** start the 3D scene over around a new origin (far across the country) */
@@ -302,6 +338,10 @@ export class MapController {
   // ---- 3D tiles -----------------------------------------------------------------------------------------------------
   private async updateTiles() {
     if (!this.map.getLayer(this.layer.id)) return this.renderStatus();
+    if (this.wantFlat) {
+      if (!this.flat) this.setFlat(true);
+      return this.renderStatus();
+    }
     if (this.map.getZoom() < MIN_ZOOM_3D) return this.renderStatus();
     const view = this.map.getBounds();
     const seq = ++this.walkSeq;
@@ -478,6 +518,25 @@ export class MapController {
     this.renderStatus();
   }
 
+  /** the visitor's choice between the 3D models and plain blocks; remembered in this browser */
+  setView(flat: boolean) {
+    store.set('fm-view', flat ? 'flat' : '3d');
+    this.wantFlat = this.ui.flat = flat;
+    if (flat) {
+      // the 3D models go: nothing of them is kept in memory while the blocks are shown
+      this.walkSeq++;
+      this.queue.length = 0;
+      this.setHover(null);
+      for (const e of this.entries.values()) if (e.view) this.layer.removeTile(e.view);
+      this.entries.clear();
+      this.entryOfView.clear();
+      this.setFlat(true);
+    } else {
+      this.setFlat(false);
+      void this.updateTiles();
+    }
+  }
+
   /** the active theme's layers as fill-extrusions on our tiles; the first layer of the theme is drawn on top */
   private renderFlat() {
     if (!this.map.getSource('fm')) return;
@@ -614,14 +673,38 @@ export class MapController {
     const themes = mapsetThemes(m.name, m.layers);
     this.catalog = themes.length ? { groups: [m.name], themes } : { groups: GROUPS, themes: THEMES };
     this.theme = this.catalog.themes[0];
+    this.restoreTheme();
     this.ui.groups = this.catalog.groups;
     this.ui.group = this.theme.group;
     this.ui.themeId = this.theme.id;
     this.ui.mapset = { id: m.id, name: m.name, note: m.note ? markdown(m.note) : '', consent: m.consent ? markdown(m.consent) : '' };
-    this.fence = fenceExpression(m.fence);
-    this.data.setFence(fenceTest(m.fence));
+    store.set(m.public ? 'last-viewed-public-mapset' : 'last-viewed-private-mapset', m.id);
+    this.applyFence();
     document.title = `${m.name} · Funderingskaart`;
     this.applyTheme(false);
+  }
+
+  /**
+   * Which buildings carry data: those inside the open mapset's fence and, with "Filter op eigendom" on, those whose
+   * owner in our tiles is the user's organisation (as the current map app filters). The rest stays neutral.
+   */
+  private applyFence() {
+    const fence = this.mapset ? fenceTest(this.mapset.fence) : null;
+    const owner = this.ui.ownerOnly ? this.ui.owner : null;
+    const expressions = [this.mapset ? fenceExpression(this.mapset.fence) : null, owner ? ['==', ['get', 'owner'], owner] : null].filter(Boolean) as unknown[][];
+    this.fence = expressions.length > 1 ? ['all', ...expressions] : expressions[0] ?? null;
+    this.data.setFence(fence || owner ? (p) => (!fence || fence(p)) && (!owner || p.owner === owner) : null);
+    if (this.flat) this.renderFlat();
+  }
+
+  setOwnerOnly(on: boolean) {
+    this.ui.ownerOnly = on && !!this.ui.owner;
+    this.applyFence();
+  }
+
+  /** another mapset: a fresh page on its address, so nothing of the previous one lingers */
+  openMapset(slug: string) {
+    location.assign(`/map/${encodeURIComponent(slug)}`);
   }
 
   /** the selected building into the address (a new history entry, so Back closes it) */
@@ -653,11 +736,19 @@ export class MapController {
   }
 
   // ---- settings -------------------------------------------------------------------------------------------------------
+  /** the layer chosen on this mapset (or on the map without one) the last time, when it still exists */
+  private restoreTheme() {
+    const id = store.get(`fm-layer-${this.mapset?.id ?? 'all'}`);
+    const t = id ? this.catalog.themes.find((x) => x.id === id) : undefined;
+    if (t) this.theme = t;
+  }
+
   setGroup(g: string) {
     if (g === this.ui.group) return;
     this.ui.group = g;
     if (this.theme.group !== g) this.theme = this.catalog.themes.find((t) => t.group === g)!;
     this.ui.themeId = this.theme.id;
+    store.set(`fm-layer-${this.mapset?.id ?? 'all'}`, this.theme.id);
     this.applyTheme();
   }
 
@@ -665,6 +756,7 @@ export class MapController {
     if (id === this.theme.id) return;
     this.theme = this.catalog.themes.find((t) => t.id === id)!;
     this.ui.themeId = id;
+    store.set(`fm-layer-${this.mapset?.id ?? 'all'}`, id);
     this.applyTheme();
   }
 
@@ -723,7 +815,9 @@ export class MapController {
     if (!this.result) {
       legendUi.total = '';
       legendUi.sections = [];
-      legendUi.message = this.map.getZoom() < MIN_ZOOM_3D ? 'Zoom in voor de panden' : 'Gegevens laden…';
+      // with the ownership filter on, tiles that arrived with nothing of the organisation in them are an answer
+      legendUi.message = this.map.getZoom() < MIN_ZOOM_3D ? 'Zoom in voor de panden'
+        : this.ui.ownerOnly && this.data.outside.size ? `Geen panden van ${this.ui.owner} in beeld.` : 'Gegevens laden…';
       return;
     }
     const n = this.data.buildings.length;
@@ -747,7 +841,8 @@ export class MapController {
     const panden = ready.reduce((s, e) => s + (e.view?.tile.buildings ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
-    if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
+    if (this.wantFlat) text = this.map.getZoom() < 13 ? 'Zoom in voor de panden' : 'Panden als blokken';
+    else if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
     else text = `${nf.format(panden)} panden in 3D · ${ready.length} tegels · ${nf1.format(mb)} MB`;
@@ -757,7 +852,7 @@ export class MapController {
   /** the legend row a building falls in for the active layer */
   private valueOf(b: number, pand?: string): { color: number; label: string; title: string } {
     const neutral = NEUTRAL[this.ui.mode].noData;
-    if (b < 0 && pand && this.data.outside.has(pand)) return { color: neutral, label: 'Buiten het gebied van deze kaart', title: this.theme.name };
+    if (b < 0 && pand && this.data.outside.has(pand)) return { color: neutral, label: this.ui.ownerOnly ? 'Niet in de selectie (eigendom of gebied)' : 'Buiten het gebied van deze kaart', title: this.theme.name };
     if (b < 0 || !this.result) return { color: neutral, label: 'Geen FunderMaps-gegevens', title: this.theme.name };
     const r = this.result.rows[b];
     if (r === -1) return { color: neutral, label: 'Niet in deze laag', title: this.theme.name };

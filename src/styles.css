@@ -4,11 +4,14 @@
   --page: #F3F1EC;
   --surface: rgba(255, 255, 255, 0.8);
   --surface-strong: rgba(255, 255, 255, 0.94);
+  /* dialogs: nothing of the map shows through */
+  --solid: #FFFFFF;
   --raise: rgba(20, 24, 31, 0.04);
   --line: rgba(20, 24, 31, 0.09);
   --ink: #151A21;
   --ink-2: #4A525E;
-  --muted: #7A828E;
+  /* 4.9:1 on the panels: small grey text stays readable (WCAG AA) */
+  --muted: #687080;
   --accent: #3E63DD;
   --accent-ink: #ffffff;
   --accent-soft: rgba(62, 99, 221, 0.1);
@@ -20,6 +23,7 @@
   --page: #12161C;
   --surface: rgba(24, 29, 37, 0.78);
   --surface-strong: rgba(26, 31, 40, 0.95);
+  --solid: #1A1F28;
   --raise: rgba(255, 255, 255, 0.05);
   --line: rgba(255, 255, 255, 0.09);
   --ink: #E9EDF2;
@@ -46,6 +50,8 @@ button { font: inherit; color: inherit; }
   background: transparent; color: var(--ink-2); cursor: pointer; transition: background .15s, color .15s;
 }
 .icon:hover { background: var(--raise); color: var(--ink); }
+/* a finger needs more room than a mouse pointer */
+@media (pointer: coarse) { .icon { width: 40px; height: 40px; } }
 .icon svg { width: 18px; height: 18px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sw { box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }

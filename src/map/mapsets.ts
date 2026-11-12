@@ -2,6 +2,7 @@
 // can be opened, by id or slug (/map/<slug>): GET /api/mapset/:idOrSlug gives its layer set (names and legends, in its
 // own order), note, disclaimer, centre and fence at runtime. The private mapsets of an organisation come with the login.
 import { API } from '@/config';
+import { api } from '@/api/client';
 import type { Props } from '@/data/building-data';
 
 export interface MapsetLayer { id: string; name: string; order: number; fields: { name: string; color: string }[] }
@@ -31,9 +32,20 @@ const PUBLIC_FENCES: Record<string, Partial<Fence>> = {
   'woerden-publiek': { municipality: ['GM0632'] },
 };
 
-/** a public mapset by id or slug; null when there is none (or it is not public) */
-export async function loadPublicMapset(idOrSlug: string, signal?: AbortSignal): Promise<Mapset | null> {
-  const res = await fetch(`${API}/api/mapset/${encodeURIComponent(idOrSlug)}`, { signal });
+/** the mapsets of a logged-in user's organisation, public ones first (the order the current map app lists them in) */
+export async function listMapsets(signal?: AbortSignal): Promise<Mapset[]> {
+  const raw = await api<unknown[]>('mapset', { signal, quiet401: true });
+  const list = (Array.isArray(raw) ? raw : []).map(fromApi);
+  return [...list.filter((m) => m.public), ...list.filter((m) => !m.public)];
+}
+
+/**
+ * A mapset by id or slug; null when there is none, or it is not this visitor's to see. With a login the cookie goes
+ * along, so an organisation's own mapset opens too; a guest only gets public ones.
+ */
+export async function loadMapset(idOrSlug: string, withLogin: boolean, signal?: AbortSignal): Promise<Mapset | null> {
+  const res = await fetch(`${API}/api/mapset/${encodeURIComponent(idOrSlug)}`, { signal, credentials: withLogin ? 'include' : 'omit' });
+  if (res.status === 401 || res.status === 403) return null;
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`mapset ${idOrSlug}: ${res.status}`);
   return fromApi(await res.json());
