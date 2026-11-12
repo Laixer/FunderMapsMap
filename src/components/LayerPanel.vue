@@ -69,6 +69,7 @@ watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640
       <section class="settings">
         <div class="switches">
           <label class="switch"><input type="checkbox" :checked="!ui.flat" @change="ctl.setView(!($event.target as HTMLInputElement).checked)"><span class="knob"></span>3D-panden</label>
+          <label class="switch" :class="{ off: ui.flat }"><input type="checkbox" :checked="ui.trees" :disabled="ui.flat" @change="ctl.setTrees(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bomen</label>
           <label class="switch"><input type="checkbox" :checked="ui.clusters" @change="ctl.setClusters(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Bouwkundige eenheid</label>
           <label v-if="ui.owner" class="switch owner"><input type="checkbox" :checked="ui.ownerOnly" @change="ctl.setOwnerOnly(($event.target as HTMLInputElement).checked)"><span class="knob"></span>Filter op eigendom</label>
         </div>

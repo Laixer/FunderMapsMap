@@ -16,6 +16,8 @@ export const BUILDINGS_3D = {
   attribution: env.VITE_3D_ATTRIBUTION ??
     '3D-panden <a href="https://www.pdok.nl/introductie/-/article/3d-basisvoorziening" target="_blank" rel="noopener">3D Basisvoorziening</a> (Kadaster), CC BY 4.0',
 };
+/** the trees: the BGT's tree points (PDOK OGC API Features; open data, CC0) */
+export const BGT = (env.VITE_BGT_URL ?? 'https://api.pdok.nl/lv/bgt/ogc/v1').replace(/\/$/, '');
 /**
  * The map's address where logging in works: the login cookie belongs to this site (fundermaps.com), so on any other
  * name the login pages forward to the same page here.

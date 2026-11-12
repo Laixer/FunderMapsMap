@@ -55,6 +55,11 @@ pnpm build      # type check + production build into dist/
   flat shapes, seen from straight above. The choice is remembered. Without a choice a phone and a device without a GPU
   start in 2D, everything else in 3D; `?view=3d|flat` tries the other once. When the 3D source cannot be reached the
   buildings stand up as blocks from the same tiles, so the map still reads as the 3D one.
+- **Trees (a prototype):** in the 3D view, from zoom 15, every tree the BGT has registered stands on the map: the
+  BGT's tree points from PDOK (`src/data/trees.ts`, per map cell, removed trees left out) drawn as one low-poly tree
+  per point with instancing (`BuildingLayer.setTrees`), lit like the buildings and casting shadows. The BGT says where a
+  tree stands, not how tall it is: the height drawn (6 to 15 m) is made up from the position, the same on every visit.
+  A "Bomen" switch turns them off. Nothing is done with them yet beyond showing them.
 - **Look:** dark unless the visitor chose light. Shadows, the surroundings and the 2026 colours are simply on. The page
   itself never scrolls (it is clipped): panels and the login pages scroll inside themselves.
 - **Phone:** below 640 px the layer panel folds (and folds again when a building opens), the building's panel and
