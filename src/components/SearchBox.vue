@@ -2,7 +2,7 @@
 // Address search for the whole country (PDOK suggestions near the view; choosing one flies there and selects the pand).
 import { ref } from 'vue';
 import type { MapController } from '@/map/controller';
-import { resolve, suggest, type Suggestion } from '@/search/search';
+import { bagId, resolve, resolveId, suggest, type Suggestion } from '@/search/search';
 
 const props = defineProps<{ ctl: MapController }>();
 const query = ref('');
@@ -10,6 +10,7 @@ const hits = ref<Suggestion[]>([]);
 const active = ref(-1);
 const open = ref(false);
 const searching = ref(false);
+const notFound = ref(false);
 let timer = 0;
 let abort: AbortController | null = null;
 
@@ -22,6 +23,17 @@ function onInput() {
     abort = new AbortController();
     searching.value = true;
     try {
+      // a BAG number or an old id: the building itself, not an address search
+      const id = bagId(q);
+      if (id) {
+        const found = await resolveId(id, abort.signal);
+        hits.value = found ? [{ id: `bag:${id}`, label: found.label, sub: 'Pand' }] : [];
+        notFound.value = !found;
+        active.value = found ? 0 : -1;
+        open.value = true;
+        return;
+      }
+      notFound.value = false;
       hits.value = await suggest(q, props.ctl.centre, abort.signal);
       active.value = hits.value.length ? 0 : -1;
       open.value = true;
@@ -33,7 +45,7 @@ async function choose(h: Suggestion) {
   query.value = h.label;
   open.value = false;
   (document.activeElement as HTMLElement | null)?.blur();
-  const target = await resolve(h.id);
+  const target = h.id.startsWith('bag:') ? await resolveId(h.id.slice(4)) : await resolve(h.id);
   if (target) props.ctl.goTo(target);
 }
 
@@ -58,7 +70,7 @@ const onFocus = () => { if (hits.value.length) open.value = true; };
 <template>
   <div class="search" role="search">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-    <input v-model="query" type="search" placeholder="Zoek een adres, postcode of plaats" autocomplete="off" spellcheck="false"
+    <input v-model="query" type="search" placeholder="Zoek een adres, postcode, plaats of BAG-nummer" autocomplete="off" spellcheck="false"
       role="combobox" :aria-expanded="open" aria-controls="search-results" aria-autocomplete="list" aria-label="Zoek een adres"
       :aria-activedescendant="open && active >= 0 ? `hit-${active}` : ''"
       @input="onInput" @keydown="onKey" @blur="onBlur" @focus="onFocus">
@@ -66,7 +78,7 @@ const onFocus = () => { if (hits.value.length) open.value = true; };
       <li v-for="(h, i) in hits" :id="`hit-${i}`" :key="h.id" role="option" :aria-selected="i === active" @mousedown.prevent="choose(h)">
         <b>{{ h.label }}</b><span>{{ h.sub }}</span>
       </li>
-      <li v-if="!hits.length" class="empty" role="option" aria-disabled="true">{{ searching ? 'Zoeken…' : 'Niets gevonden' }}</li>
+      <li v-if="!hits.length" class="empty" role="option" aria-disabled="true">{{ searching ? 'Zoeken…' : notFound ? 'Dit nummer kennen we niet' : 'Niets gevonden' }}</li>
     </ul>
   </div>
 </template>

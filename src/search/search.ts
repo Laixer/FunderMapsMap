@@ -18,6 +18,31 @@ export async function suggest(query: string, near?: { lon: number; lat: number }
   return docs.map((d) => ({ id: d.id, label: d.weergavenaam, sub: TYPE_LABEL[d.type] ?? d.type }));
 }
 
+/**
+ * A BAG number or one of our old ids, as someone pastes it from a report or a spreadsheet: a pand
+ * (NL.IMBAG.PAND.<16 digits>), an address (NL.IMBAG.NUMMERAANDUIDING.…), a verblijfsobject, the bare 16 digits, or an
+ * old gfm- id. Null for anything else (an address typed in words goes to PDOK).
+ */
+export function bagId(query: string): string | null {
+  const q = query.trim();
+  const full = /^NL\.IMBAG\.(PAND|NUMMERAANDUIDING|VERBLIJFSOBJECT|LIGPLAATS|STANDPLAATS)\.(\d{16})$/i.exec(q);
+  if (full) return `NL.IMBAG.${full[1].toUpperCase()}.${full[2]}`;
+  if (/^\d{16}$/.test(q)) {
+    // the digits 5 and 6 of a BAG number say what it is: 10 a pand, 20 an address, 01 a verblijfsobject
+    const kind = { '10': 'PAND', '20': 'NUMMERAANDUIDING', '01': 'VERBLIJFSOBJECT', '02': 'LIGPLAATS', '03': 'STANDPLAATS' }[q.slice(4, 6)];
+    return kind ? `NL.IMBAG.${kind}.${q}` : null;
+  }
+  return /^gfm-[0-9a-f]{32}$/i.test(q) ? q.toLowerCase() : null;
+}
+
+/** such an id → the building to open; null when we do not know it */
+export async function resolveId(id: string, signal?: AbortSignal): Promise<{ lon: number; lat: number; zoom: number; buildingId: string; label: string } | null> {
+  const info = await buildingInfo(id, signal);
+  if (!info?.building_id || typeof info.building_lon !== 'number' || typeof info.building_lat !== 'number') return null;
+  const label = info.street ? `${info.street} ${info.building_number ?? ''}, ${info.city ?? ''}`.replace(/\s+,/, ',').trim() : info.building_id;
+  return { lon: info.building_lon, lat: info.building_lat, zoom: 17.4, buildingId: info.building_id.slice(-16), label };
+}
+
 /** a PDOK id → where to go; for an address also the pand to select */
 export async function resolve(id: string): Promise<{ lon: number; lat: number; zoom: number; buildingId?: string } | null> {
   const res = await fetch(`${PDOK}/lookup?id=${encodeURIComponent(id)}&fl=id,type,weergavenaam,centroide_ll,nummeraanduiding_id`);

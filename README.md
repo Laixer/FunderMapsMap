@@ -58,7 +58,8 @@ pnpm build      # type check + production build into dist/
   card are sheets from the bottom, lists stack, touch targets are 40 px.
 - **Keyboard:** the building panel takes the focus when it opens, each view moves it to its heading, Escape goes back
   a view and then closes the panel; dialogs are native `<dialog>`s.
-- **Search:** PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
+- **Search:** a BAG number (pand, address or verblijfsobject, with or without `NL.IMBAG.…`) or an old gfm id opens
+  that building; anything else is an address search: PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 
 No private data lives in this repository or the bundle.
