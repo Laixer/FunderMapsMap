@@ -5,9 +5,12 @@ import { Map as MapLibreMap, NavigationControl, ScaleControl, GeolocateControl, 
 // MapLibre 6 looks for its worker as `maplibre-gl-worker.mjs` next to its own file, a name the bundler cannot see, so
 // the worker never ends up in the build ("Worker failed to load"). Ship it as an asset and say where it is.
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
-import { TileWorkers } from '@/engine/workers';
-import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
+import { makeFrame, type Frame } from '@/engine/frame';
+import { softwareRenderer } from '@/engine/gpu';
+// Of the 3D engine only types are imported here: the engine itself is fetched when the 3D view is shown (load3d).
+import type { Engine3d } from '@/engine/engine3d';
+import type { TileFeature } from '@/engine/tiles';
+import type { BuildingLayer, Mode, TileView } from '@/engine/scene';
 import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
 import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, type Theme, type ThemeResult } from '@/engine/themes';
 import AREA_LAYERS from '@/config/area-layers.json';
@@ -21,7 +24,7 @@ import { loadPosition, savePosition, type Position } from '@/map/position';
 import { loadSession, toLogin } from '@/api/session';
 import { parseRoute, writeRoute, type Route } from '@/map/route';
 import { markdown } from '@/lib/markdown';
-import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
+import type { LeafTile } from '@/engine/bag3d-tileset';
 import { ALL_LAYERS, BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
 
 setWorkerUrl(maplibreWorker);
@@ -90,6 +93,11 @@ const tileDistance = (zoom: number) => Math.min(4500, Math.max(1200, 2200 * 2 **
 const MAX_TILES = 40;
 /** past this distance from the frame origin the scene starts over around the view (keeps float32 metres small) */
 const REFRAME_METRES = 40000;
+/**
+ * An empty layer that keeps the place of the 3D buildings in the style, above the ground layers and under the 2D
+ * buildings: the 3D layer itself is only there once its engine is loaded.
+ */
+const SLOT_3D = 'fm-3d-slot';
 const NEUTRAL: Record<Mode, { noData: number; context: number }> = {
   light: { noData: 0xdcdfe4, context: 0xeeeff1 },
   dark: { noData: 0x4a525d, context: 0x2b313a },
@@ -141,10 +149,17 @@ function fmt(value: unknown, labels?: Record<string, string>): string | null {
 export class MapController {
   map: MapLibreMap;
   private frame: Frame;
-  private layer: BuildingLayer;
-  private workers = new TileWorkers(2);
+  /**
+   * The 3D view. Its engine (three.js, the tile workers, the walk over the 3D tileset) is a part of the build of its
+   * own, fetched the first time the 3D view is shown (load3d); its layer is put on the map then (addLayer3d). A 2D map
+   * has neither, and downloads nothing of them.
+   */
+  private engine: Engine3d | null = null;
+  private layer: BuildingLayer | null = null;
+  private loading3d: Promise<Engine3d | null> | null = null;
+  /** this device draws in software (no GPU): the 3D models cost too much there */
+  private software = false;
   private data: BuildingData;
-  private tileset = new Bag3dTileset(BUILDINGS_3D.base, BUILDINGS_3D.root);
   /** the 3D BAG leaf tiles of the last walk, by uri */
   private leaves = new Map<string, LeafTile>();
   private walkSeq = 0;
@@ -241,12 +256,12 @@ export class MapController {
     this.route = { ...route, building: target?.pand ?? route.building };
     this.pendingSelect = target?.pand ?? null;
     this.frame = makeFrame(start.center[0], start.center[1]);
-    this.layer = new BuildingLayer(this.frame);
     this.data = new BuildingData(TILESERVER, () => this.onData());
-    // the trees of each cell go to whichever scene is current (the scene starts over far across the country)
+    // the trees of each cell go to whichever scene is current (the scene starts over far across the country); a scene
+    // that comes later gets the cells kept here
     this.trees = new TreeData((key, lonLat) => {
       if (lonLat) this.treeCells.set(key, lonLat); else this.treeCells.delete(key);
-      this.layer.setTrees(key, lonLat);
+      this.layer?.setTrees(key, lonLat);
       this.renderStatus();
     });
     this.map = new MapLibreMap({
@@ -264,7 +279,15 @@ export class MapController {
     this.map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
     this.map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), 'top-right');
     this.map.addControl(new ScaleControl({ maxWidth: 110 }), 'bottom-right');
-    this.layer.lines = ui.lines;
+    // 3D or blocks: what the visitor chose before; else blocks on a phone and without a GPU, where the 3D models
+    // cost too much (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other.
+    // Decided here, on the map's own WebGL context, so the 3D engine is not needed to know it.
+    this.software = softwareRenderer(this.map.getCanvas().getContext('webgl2'));
+    const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
+    this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.software || matchMedia('(max-width: 640px)').matches));
+    ui.flat = this.wantFlat;
+    // a 3D map fetches its engine while the map itself loads, as it did when the engine was part of the page's script
+    if (!this.wantFlat) void this.load3d();
     if (mapset) this.setMapset(mapset);
     else { this.restoreTheme(); ui.group = this.theme.group; ui.themeId = this.theme.id; this.renderLayers(); this.renderLegend(); }
     // the address follows the map from here: canonical form (old /kaart/… and …/gebouw/… links), Back and Forward. An
@@ -279,7 +302,8 @@ export class MapController {
         id: 'selection-ring', type: 'circle', source: 'selection',
         paint: { 'circle-pitch-alignment': 'map', 'circle-color': '#3E63DD', 'circle-opacity': 0.08, 'circle-stroke-color': '#3E63DD', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.6, 'circle-radius': 0 },
       }, firstSymbol);
-      this.map.addLayer(this.layer, firstSymbol);
+      // the place of the 3D buildings: they are put here once their engine is loaded (addLayer3d)
+      this.map.addLayer({ id: SLOT_3D, type: 'background', layout: { visibility: 'none' } }, firstSymbol);
       // flat mode: our own building tiles (layers added by renderFlat) and the outline of a building picked there
       this.map.addSource('fm', { type: 'vector', url: `${TILESERVER}/buildings` });
       this.map.addLayer({
@@ -288,13 +312,7 @@ export class MapController {
       }, firstSymbol);
       // without a GPU the shadow pass costs seconds per frame: start with shadows off there (?shadows=on forces them)
       const forced = new URLSearchParams(location.search).get('shadows');
-      this.layer.shadows = forced ? forced === 'on' : !this.layer.software;
-      ui.shadows = this.layer.shadows;
-      // 3D or blocks: what the visitor chose before; else blocks on a phone and without a GPU, where the 3D models
-      // cost too much (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other.
-      const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
-      this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.layer.software || matchMedia('(max-width: 640px)').matches));
-      ui.flat = this.wantFlat;
+      ui.shadows = forced ? forced === 'on' : !this.software;
       this.applyMode(false);
       // the opening sweep belongs to the 3D view; a 2D map just opens, seen from straight above (unless the address
       // or a remembered position says how to look)
@@ -318,7 +336,7 @@ export class MapController {
           this.tooltipFor(b, b >= 0 ? this.data.buildings[b] : this.data.outside.has(id) ? {} : p, null, e.point.x, e.point.y, id);
           return;
         }
-        const hit = this.layer.pick(e.point.x, e.point.y, this.visible);
+        const hit = this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null;
         this.setHover(hit);
         this.renderTooltip(hit, e.point.x, e.point.y);
       });
@@ -326,11 +344,15 @@ export class MapController {
     this.map.on('mouseout', () => { this.setHover(null); this.renderTooltip(null, 0, 0); });
     this.map.on('movestart', () => this.renderTooltip(null, 0, 0));
     this.map.on('click', (e) => {
-      if (!this.flat) return this.select(this.layer.pick(e.point.x, e.point.y, this.visible));
+      if (!this.flat) return this.select(this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null);
       const p = this.flatAt(e.point.x, e.point.y);
       this.selectFlat(p ? { id: String(p.building_id).slice(-16), props: p } : null);
     });
-    if (location.search.includes('debug')) Object.assign(window as any, { __pick: (x: number, y: number) => this.layer.pick(x, y, this.visible), __layer: this.layer, __ctl: this });
+    if (location.search.includes('debug')) {
+      Object.assign(window as any, { __pick: (x: number, y: number) => this.layer?.pick(x, y, this.visible) ?? null, __ctl: this });
+      // the 3D layer comes later, and another one when the scene starts over: always the one there is now (or null)
+      Object.defineProperty(window, '__layer', { get: () => this.layer, configurable: true });
+    }
   }
 
   private firstSymbol() {
@@ -355,18 +377,44 @@ export class MapController {
     this.select(null);
     this.setHover(null);
     this.queue.length = 0;
-    for (const e of this.entries.values()) if (e.view) this.layer.removeTile(e.view);
+    for (const e of this.entries.values()) if (e.view) this.layer?.removeTile(e.view);
     this.entries.clear();
     this.entryOfView.clear();
     this.frame = makeFrame(lon, lat);
-    const lines = this.layer.lines, shadows = this.layer.shadows;
+    // a map that has not shown 3D yet has no scene to start over: its layer is made around the new origin when it comes
+    if (!this.engine || !this.layer) return;
     this.map.removeLayer(this.layer.id);
-    this.layer = new BuildingLayer(this.frame);
-    this.layer.lines = lines;
-    this.layer.shadows = shadows;
-    this.map.addLayer(this.layer, this.firstSymbol());
-    this.layer.setMode(this.ui.mode);
-    for (const [key, lonLat] of this.treeCells) this.layer.setTrees(key, lonLat);
+    this.addLayer3d(this.engine);
+  }
+
+  /**
+   * The 3D engine, fetched once. Null when it could not be fetched, or when 2D was chosen while it was on its way: it
+   * is asked for again the next time the 3D view is shown. Does not touch the map, so it can start before the map has
+   * loaded.
+   */
+  private load3d(): Promise<Engine3d | null> {
+    if (this.engine) return Promise.resolve(this.engine);
+    this.loading3d ??= import('@/engine/engine3d')
+      .then(({ createEngine3d }) => {
+        // back in 2D by the time it arrives: no workers are started for a view that is not shown
+        if (this.wantFlat) return null;
+        return (this.engine = createEngine3d(BUILDINGS_3D.base, BUILDINGS_3D.root));
+      })
+      .catch((err) => { console.error(err); return null; })
+      .finally(() => { this.loading3d = null; });
+    return this.loading3d;
+  }
+
+  /** a new 3D layer around the frame origin, in its place in the style, set as the map is now */
+  private addLayer3d(engine: Engine3d) {
+    const layer = (this.layer = engine.makeLayer(this.frame));
+    layer.lines = this.ui.lines;
+    layer.shadows = this.ui.shadows;
+    this.map.addLayer(layer, SLOT_3D);
+    // while our own tiles draw the buildings (2D, or blocks when the 3D models cannot be reached) it is hidden: setFlat
+    if (this.flat) this.map.setLayoutProperty(layer.id, 'visibility', 'none');
+    layer.setMode(this.ui.mode);
+    for (const [key, lonLat] of this.treeCells) layer.setTrees(key, lonLat);
   }
 
   // ---- trees ----
@@ -389,11 +437,27 @@ export class MapController {
 
   // ---- 3D tiles -----------------------------------------------------------------------------------------------------
   private async updateTiles() {
-    if (!this.map.getLayer(this.layer.id)) return this.renderStatus();
+    if (!this.map.getLayer(SLOT_3D)) return this.renderStatus();
     if (this.wantFlat) {
       if (!this.flat) this.setFlat(true);
       return this.renderStatus();
     }
+    // the 3D view is shown: the first time, its engine comes first
+    let engine = this.engine;
+    if (!engine) {
+      const fetched = this.load3d();
+      this.renderStatus();
+      engine = await fetched;
+      // 2D was chosen while it was on its way
+      if (this.wantFlat) return this.renderStatus();
+    }
+    if (!engine) {
+      // it could not be fetched (offline, or a newer version is live): blocks, as when the 3D models cannot be reached
+      if (!this.flat) this.setFlat(true);
+      return this.renderStatus();
+    }
+    // one layer, also when two view changes waited for the engine
+    if (!this.layer) this.addLayer3d(engine);
     if (this.map.getZoom() < MIN_ZOOM_3D) return this.renderStatus();
     const view = this.map.getBounds();
     const seq = ++this.walkSeq;
@@ -401,7 +465,7 @@ export class MapController {
     this.walking = true;
     this.renderStatus();
     try {
-      found = await this.tileset.leaves([view.getWest(), view.getSouth(), view.getEast(), view.getNorth()]);
+      found = await engine.tileset.leaves([view.getWest(), view.getSouth(), view.getEast(), view.getNorth()]);
       this.walkError = false;
       if (this.flat) this.setFlat(false);
     } catch (err) {
@@ -438,30 +502,33 @@ export class MapController {
       .sort((a, b) => distanceTo(b.bounds, c) - distanceTo(a.bounds, c));
     for (const e of spare.slice(0, this.entries.size - room)) {
       if (e.view === this.hovered?.view) this.setHover(null);
-      this.layer.removeTile(e.view!);
+      this.layer?.removeTile(e.view!);
       this.entryOfView.delete(e.view!);
       this.entries.delete(e.uri);
     }
   }
 
   private pump() {
+    // tiles are only queued by the 3D view, which has its engine and its layer by then
+    const engine = this.engine;
+    if (!engine) return;
     while (this.active < 4 && this.queue.length) {
       const uri = this.queue.shift()!;
       const t = this.leaves.get(uri);
       if (this.entries.has(uri) || !t) continue;
-      const { done } = this.workers.request(this.tileset.base + uri, this.frame, t.transform);
+      const { done } = engine.workers.request(engine.tileset.base + uri, this.frame, t.transform);
       const entry: TileEntry = { uri, bounds: t.bounds, state: 'loading' };
       const layer = this.layer;
       this.entries.set(uri, entry);
       this.active++;
       done
         .then((tile) => {
-          if (this.entries.get(uri) !== entry || layer !== this.layer) return;
+          if (this.entries.get(uri) !== entry || layer !== this.layer || !layer) return;
           entry.state = 'ready';
-          entry.view = this.layer.addTile(tile, new Uint8Array(tile.features.length * 4));
+          entry.view = layer.addTile(tile, new Uint8Array(tile.features.length * 4));
           this.entryOfView.set(entry.view, entry);
           this.linkFeatures(entry);
-          this.layer.setColors(entry.view, this.tileColors(entry), false);
+          layer.setColors(entry.view, this.tileColors(entry), false);
           this.trySelectPending(entry);
         })
         .catch((err) => {
@@ -503,7 +570,7 @@ export class MapController {
   }
 
   private repaintAll(animate: boolean) {
-    for (const entry of this.entries.values()) if (entry.view) this.layer.setColors(entry.view, this.tileColors(entry), animate);
+    for (const entry of this.entries.values()) if (entry.view) this.layer?.setColors(entry.view, this.tileColors(entry), animate);
   }
 
   // ---- data -----------------------------------------------------------------------------------------------------------
@@ -543,9 +610,10 @@ export class MapController {
   /** one of the current map app's own layers (area-layers.json) on the ground, under the 3D buildings */
   private addGround(layerId: string, id: string) {
     const spec = (AREA_LAYERS as Record<string, any>)[layerId];
-    if (!spec || !this.map.getLayer(this.layer.id)) return;
-    // the current map app keeps its layers hidden until a user turns them on: here they are on when added
-    this.map.addLayer({ ...spec, id, source: this.sourceFor(spec.source), layout: { ...spec.layout, visibility: 'visible' } }, this.layer.id);
+    if (!spec || !this.map.getLayer(SLOT_3D)) return;
+    // the current map app keeps its layers hidden until a user turns them on: here they are on when added. Under the 3D
+    // layer, or under its place when it is not there (yet): it then comes above them.
+    this.map.addLayer({ ...spec, id, source: this.sourceFor(spec.source), layout: { ...spec.layout, visibility: 'visible' } }, this.layer?.id ?? SLOT_3D);
   }
 
   private renderArea() {
@@ -565,7 +633,7 @@ export class MapController {
     this.flat = on;
     if (on) this.select(null);
     else this.selectFlat(null);
-    if (this.map.getLayer(this.layer.id)) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
+    if (this.layer) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
     this.renderFlat();
     this.renderStatus();
   }
@@ -579,7 +647,7 @@ export class MapController {
       this.walkSeq++;
       this.queue.length = 0;
       this.setHover(null);
-      for (const e of this.entries.values()) if (e.view) this.layer.removeTile(e.view);
+      for (const e of this.entries.values()) if (e.view) this.layer?.removeTile(e.view);
       this.entries.clear();
       this.entryOfView.clear();
       this.setFlat(true);
@@ -650,7 +718,7 @@ export class MapController {
 
   private selectFlat(sel: { id: string; props: Props } | null) {
     this.flatSelected = sel;
-    if (sel) { this.selected = null; this.layer.setSelected(null, -1); }
+    if (sel) { this.selected = null; this.layer?.setSelected(null, -1); }
     if (this.map.getLayer('fm-flat-selected')) {
       this.map.setFilter('fm-flat-selected', ['==', ['get', 'building_id'], sel ? String(sel.props.building_id) : '']);
     }
@@ -670,7 +738,7 @@ export class MapController {
   select(hit: Hit | null) {
     if (!hit && this.flatSelected) return this.selectFlat(null);
     this.selected = hit;
-    this.layer.setSelected(hit?.view ?? null, hit?.feature ?? -1);
+    this.layer?.setSelected(hit?.view ?? null, hit?.feature ?? -1);
     this.renderRing();
     this.loadPlace();
     this.renderInfo();
@@ -681,7 +749,7 @@ export class MapController {
     if (this.same(hit, this.hovered)) return;
     const previous = this.hovered?.view ?? null;
     this.hovered = hit;
-    this.layer.setHovered(hit?.view ?? null, hit?.feature ?? -1, previous);
+    this.layer?.setHovered(hit?.view ?? null, hit?.feature ?? -1, previous);
     this.map.getCanvas().style.cursor = hit ? 'pointer' : '';
   }
 
@@ -710,8 +778,8 @@ export class MapController {
   private renderRing() {
     const source = this.map.getSource('selection') as GeoJSONSource | undefined;
     if (!source) return;
-    const s = this.layer.selection;
-    source.setData({ type: 'FeatureCollection', features: s ? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: this.layer.toLngLat(s.x, s.y) } }] : [] });
+    const s = this.layer?.selection;
+    source.setData({ type: 'FeatureCollection', features: s ? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: this.layer!.toLngLat(s.x, s.y) } }] : [] });
     if (!s) return;
     const px = (zoom: number) => (s.radius + 3) * this.frame.scale * 512 * 2 ** zoom;
     this.map.setPaintProperty('selection-ring', 'circle-radius', ['interpolate', ['exponential', 2], ['zoom'], 10, px(10), 22, px(22)]);
@@ -829,7 +897,7 @@ export class MapController {
 
   setShadows(on: boolean) {
     this.ui.shadows = on;
-    this.layer.shadows = on;
+    if (this.layer) this.layer.shadows = on;
     this.map.triggerRepaint();
   }
 
@@ -854,7 +922,7 @@ export class MapController {
   private applyMode(animate: boolean) {
     document.documentElement.dataset.theme = this.ui.mode;
     restyle(this.map, this.ui.mode);
-    this.layer.setMode(this.ui.mode);
+    this.layer?.setMode(this.ui.mode);
     this.repaintAll(animate);
     this.renderRing();
     this.renderLegend();
@@ -904,15 +972,17 @@ export class MapController {
 
   private renderStatus() {
     const ready = [...this.entries.values()].filter((e) => e.state === 'ready');
-    const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading + (this.walking ? 1 : 0);
+    const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading + (this.walking ? 1 : 0) + (this.loading3d ? 1 : 0);
     const panden = ready.reduce((s, e) => s + (e.view?.tile.buildings ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
     if (this.wantFlat) text = this.map.getZoom() < 13 ? 'Zoom in voor de panden' : 'Panden in 2D';
     else if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
+    // the 3D engine itself is on its way (the first time the 3D view is shown)
+    else if (this.loading3d) text = '3D-panden laden…';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
-    else text = `${nf.format(panden)} panden in 3D${this.layer.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
+    else text = `${nf.format(panden)} panden in 3D${this.layer?.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
     this.ui.status = { text, busy: loading > 0 };
   }
 

@@ -5,21 +5,10 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTFParser } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { mercatorX, mercatorY, type Frame } from './frame';
 
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
-
-export interface Frame {
-  lon: number;
-  lat: number;
-  /** Web Mercator origin, 0..1 */
-  mx: number;
-  my: number;
-  /** Mercator units per metre at the origin */
-  scale: number;
-  /** ECEF -> east/north/up rotation at the origin, row-major */
-  enu: number[];
-}
 
 export interface TileFeature {
   /** 16-digit BAG pand number */
@@ -74,28 +63,6 @@ const EP2 = (A * A - B * B) / (B * B);
 const DEG = 180 / Math.PI;
 /** faces meeting at a sharper angle than this get a line (cos 20°) */
 const CREASE = Math.cos((20 * Math.PI) / 180);
-
-export function mercatorX(lon: number): number {
-  return (180 + lon) / 360;
-}
-
-export function mercatorY(lat: number): number {
-  return (180 - DEG * Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))) / 360;
-}
-
-export function makeFrame(lon: number, lat: number): Frame {
-  const la = lat / DEG;
-  const lo = lon / DEG;
-  const sinLa = Math.sin(la), cosLa = Math.cos(la), sinLo = Math.sin(lo), cosLo = Math.cos(lo);
-  return {
-    lon, lat,
-    mx: mercatorX(lon),
-    my: mercatorY(lat),
-    // MapLibre: 1 m = 1 / (earth circumference * cos(lat)) mercator units
-    scale: 1 / (2 * Math.PI * 6378137 * cosLa),
-    enu: [-sinLo, cosLo, 0, -sinLa * cosLo, -sinLa * sinLo, cosLa, cosLa * cosLo, cosLa * sinLo, sinLa],
-  };
-}
 
 /** ECEF -> [lon, lat, ellipsoidal height] (Bowring, mm-level for buildings) */
 function geodetic(x: number, y: number, z: number, out: number[]): void {
