@@ -96,6 +96,8 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside); do
 /* a long name or address wraps: it is there to be read and typed over, not cut */
 .details b { font-size: 13px; font-weight: 620; overflow-wrap: anywhere; }
 .details small { font-size: 12px; color: var(--muted); }
-.menu .details a { padding: 2px 0; border-radius: 4px; font-size: 12.5px; color: var(--accent); overflow-wrap: anywhere; }
+/* tall enough to hit: 24 px at least (WCAG 2.2 target size), more under a finger */
+.menu .details a { padding: 4px 0; border-radius: 4px; font-size: 12.5px; color: var(--accent); overflow-wrap: anywhere; }
+@media (pointer: coarse) { .menu .details a { padding: 9px 0; } }
 .menu .details a:hover { background: transparent; text-decoration: underline; }
 </style>
