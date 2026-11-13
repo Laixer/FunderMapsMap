@@ -24,10 +24,13 @@ async function call<T = unknown>(path: string, body?: Record<string, unknown>, m
   let res: Response;
   let text: string;
   try {
+    // A POST always carries a JSON body, an empty one where there is nothing to say (sign-out): the API refuses a POST
+    // without one (415), and the visitor would stay logged in.
+    const post = method === 'POST';
     res = await fetch(`${API}/api/auth${path}`, {
       method, credentials: 'include',
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
+      headers: post ? { 'Content-Type': 'application/json' } : undefined,
+      body: post ? JSON.stringify(body ?? {}) : undefined,
     });
     text = await res.text();
   } catch {
