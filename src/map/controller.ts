@@ -9,7 +9,7 @@ import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
 import { TileWorkers } from '@/engine/workers';
 import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
 import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
-import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, type Theme, type ThemeResult } from '@/engine/themes';
+import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, updateOwners, type Theme, type ThemeResult } from '@/engine/themes';
 import AREA_LAYERS from '@/config/area-layers.json';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
@@ -521,6 +521,9 @@ export class MapController {
   }
 
   private applyTheme(animate = true) {
+    // the ownership layer names the owners among the buildings loaded: rank them before colouring. When that changed
+    // its rule, renderFlat below draws the 2D layers with the new one (it draws them again on every call).
+    if (this.theme.layers.includes('owner')) updateOwners(this.data.buildings);
     // an area theme colours no buildings (they stay neutral) and draws its layer on the ground
     this.result = this.data.buildings.length && !this.theme.area ? evaluateTheme(this.theme, this.data.buildings, this.ui.palette) : null;
     this.renderLayers();

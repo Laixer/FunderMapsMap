@@ -29,6 +29,11 @@ pnpm build      # type check + production build into dist/
 - **Colours** are the current map app's own layer rules and the database legends (`src/engine/rules.json`,
   `legends.json`, frozen by `tools/freeze-rules.py`), evaluated with MapLibre's style-spec engine, optionally in the
   2026 palette. An open mapset brings its own legends at runtime.
+- **Ownership (layer `owner`, "Eigendom"):** hundreds of owners do not fit a legend, so this layer's rule and legend
+  are made from the buildings loaded around the view (`updateOwners` in `src/engine/themes.ts`): the 12 owners with
+  the most buildings get a colour and a legend row each, every other owner shares the row "Overig corporatiebezit", a
+  building without an owner is not in the layer. An owner keeps its colour while the map moves. The layer shows when
+  a mapset's layer set contains the layer id `owner`.
 - **Mapsets and links:** `/map/<mapset>` opens a public mapset from the API (`/api/mapset/<id or slug>`): its layer
   set, note, disclaimer, centre and fence. `/map/<mapset>/building/<pand id>(/<panel>)` opens a building on it; the
   current map app's old forms (`/kaart/…`, `…/gebouw/…`) and `?lat=…&lng=…` work too. The camera is in the hash

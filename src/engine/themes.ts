@@ -1,12 +1,13 @@
 // Map themes: the live map app's drawing rules (WebFront src/config/layers/*.json, frozen in rules.json) evaluated
 // per building with MapLibre's own style-spec engine, so every building gets exactly the colour the 2D map draws.
 // Legends are the DB rows (application.mapset_layer.fields, frozen in legends.json). The '2026' palette swaps
-// colours in both, row by row (palette.ts).
+// colours in both, row by row (palette.ts). One layer is not frozen: the ownership layer's rule and legend are made
+// here from the buildings loaded (updateOwners).
 import { expression, featureFilter, latest } from '@maplibre/maplibre-gl-style-spec';
 import RULES from './rules.json';
 import LEGENDS from './legends.json';
 import AREA_LAYERS from '@/config/area-layers.json';
-import { colorDistance, parseColor, recolorExpression, remap, type PaletteName } from './palette';
+import { OWNER_COLORS, OWNER_OTHER, colorDistance, parseColor, recolorExpression, remap, type PaletteName } from './palette';
 
 export type Props = Record<string, string | number | boolean>;
 
@@ -50,6 +51,7 @@ export const THEMES: Theme[] = [
   { id: 'foundation-recovery', group: 'Fundering', name: 'Funderingsherstel', layers: ['foundation-recovery'] },
   { id: 'velocity', group: 'Fundering', name: 'Pandzakking', layers: ['velocity'] },
   { id: 'construction-year', group: 'Pand', name: 'Bouwjaar', layers: ['construction-year'] },
+  { id: 'owner', group: 'Pand', name: 'Eigendom', layers: ['owner'] },
   { id: 'unclassified-risk', group: 'Risico', name: 'Funderingsrisico', layers: ['unclassified-risk'], note: 'Op basis van onderzoek.' },
   { id: 'drystand-risk', group: 'Risico', name: 'Droogstand', layers: ['drystand-risk'] },
   { id: 'dewatering-depth-risk', group: 'Risico', name: 'Ontwateringsdiepte', layers: ['dewatering-depth-risk'] },
@@ -100,15 +102,88 @@ function referenced(expr: unknown, out: Set<string>): Set<string> {
 const compiled = new Map<string, Compiled>();
 const COLOR_SPEC = (latest as any)['paint_fill-extrusion']['fill-extrusion-color'];
 type Legend = { name: string; fields: { name: string; color: string }[] };
+/** a drawing rule as rules.json holds them: filter and colour are MapLibre expressions */
+interface Rule { filter: unknown; color: unknown; source: string; sourceFilter: unknown }
 /** legends of the open mapset (its layer set, at runtime); the frozen DB legends for everything else */
 let runtimeLegends = new Map<string, Legend>();
-const legendOf = (id: string): Legend => runtimeLegends.get(id) ?? (LEGENDS as Record<string, Legend>)[id];
+/**
+ * Layers made at runtime: their rule and legend go before the frozen ones, and before a mapset's own legend. `strip`
+ * is the colour strip in the layer list, which stays the same while the legend follows the view.
+ */
+const dynamic = new Map<string, { rule: Rule; legend: Legend; strip: number[] }>();
+const ruleOf = (id: string): any => dynamic.get(id)?.rule ?? (RULES as Record<string, any>)[id];
+const legendOf = (id: string): Legend => dynamic.get(id)?.legend ?? runtimeLegends.get(id) ?? (LEGENDS as Record<string, Legend>)[id];
 
 /** use these legends (a mapset's layer set) over the frozen ones; [] goes back to the frozen ones */
 export function setLegends(layers: { id: string; name: string; fields: { name: string; color: string }[] }[]) {
   runtimeLegends = new Map(layers.filter((l) => l.fields?.length).map((l) => [l.id, { name: l.name, fields: l.fields }]));
   compiled.clear();
 }
+
+// ---- the ownership layer ---------------------------------------------------------------------------------------------
+// Who owns a building (the `owner` of our tiles: a name, mostly a housing corporation's). There are hundreds of
+// owners, far too many for a legend, so this layer's rule and legend are made from the buildings loaded: the owners
+// with the most buildings get a colour and a legend row each, every other owner shares one colour and one row. A
+// building without an owner is not in the layer.
+const OWNER = 'owner';
+const OTHER_OWNERS = 'Overig corporatiebezit';
+/**
+ * owner → its place in OWNER_COLORS, for as long as the page lives, so an owner keeps its colour while the map moves.
+ * In order of last use: when a new owner needs a colour and none is free, the owner longest out of the legend gives up
+ * theirs.
+ */
+const ownerSlot = new Map<string, number>();
+/** the legend rows of the rule in use, to tell whether a new ranking changes anything */
+let ownerRows: string | null = null;
+
+/**
+ * Rank the owners of these buildings and make the ownership layer's rule and legend from them: as many owners as there
+ * are colours, those with the most buildings (equal counts by name), most buildings first. True when the rule or the
+ * legend changed: what was compiled for the old one is dropped here, drawing again is the caller's.
+ */
+export function updateOwners(buildings: Props[]): boolean {
+  const counts = new Map<string, number>();
+  for (const b of buildings) {
+    const name = b.owner;
+    if (typeof name === 'string' && name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const ranked = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, OWNER_COLORS.length).map(([name]) => name);
+  const top = new Set(ranked);
+  for (const name of ranked) {
+    if (ownerSlot.has(name)) continue;
+    // a colour no owner holds; else the colour of the owner longest out of the legend, who loses it
+    const held = new Set(ownerSlot.values());
+    let slot = OWNER_COLORS.findIndex((_, i) => !held.has(i));
+    if (slot < 0) for (const [other, s] of ownerSlot) if (!top.has(other)) { ownerSlot.delete(other); slot = s; break; }
+    ownerSlot.set(name, slot);
+  }
+  // used now: back to the end of the line, the owner with the most buildings last of all
+  for (let i = ranked.length - 1; i >= 0; i--) {
+    const slot = ownerSlot.get(ranked[i])!;
+    ownerSlot.delete(ranked[i]);
+    ownerSlot.set(ranked[i], slot);
+  }
+  const named = ranked.map((name) => ({ name, color: OWNER_COLORS[ownerSlot.get(name)!] }));
+  // the shared row only when there is an owner without a row of its own
+  const fields = counts.size > named.length ? [...named, { name: OTHER_OWNERS, color: OWNER_OTHER }] : named;
+  const rows = JSON.stringify(fields);
+  if (rows === ownerRows) return false;
+  ownerRows = rows;
+  const hasOwner = ['all', ['has', OWNER], ['!=', ['get', OWNER], '']];
+  dynamic.set(OWNER, {
+    rule: {
+      filter: hasOwner, sourceFilter: hasOwner, source: 'buildings',
+      // a match needs at least one branch; an owner it does not name gets the shared colour
+      color: named.length ? ['match', ['get', OWNER], ...named.flatMap((f) => [f.name, f.color]), OWNER_OTHER] : OWNER_OTHER,
+    },
+    legend: { name: 'Eigendom', fields },
+    strip: [...OWNER_COLORS, OWNER_OTHER].map((c) => parseColor(c)!),
+  });
+  for (const key of compiled.keys()) if (key.endsWith(`:${OWNER}`)) compiled.delete(key);
+  return true;
+}
+// the layer exists before any building is loaded: a mapset's layer set and the layer list ask for it
+updateOwners([]);
 
 /**
  * The themes of a mapset: one per layer of its layer set, in its order and under its names. Building layers colour the
@@ -117,12 +192,11 @@ export function setLegends(layers: { id: string; name: string; fields: { name: s
  * them at once, as switching them all on does in the current map app.
  */
 export function mapsetThemes(group: string, layers: { id: string; name: string }[]): Theme[] {
-  const rules = RULES as Record<string, unknown>;
   const areas = AREA_LAYERS as Record<string, unknown>;
   const themes: Theme[] = [];
   for (const l of layers) {
     if (l.id === 'building-cluster') continue;
-    if (rules[l.id]) themes.push({ id: l.id, group, name: l.name, layers: [l.id] });
+    if (ruleOf(l.id)) themes.push({ id: l.id, group, name: l.name, layers: [l.id] });
     else if (areas[l.id]) themes.push({ id: l.id, group, name: l.name, layers: [], area: l.id });
   }
   const types = FOUNDATION_TYPES.filter((id) => layers.some((l) => l.id === id));
@@ -145,7 +219,7 @@ function compile(id: string, palette: PaletteName): Compiled {
   const key = `${palette}:${id}`;
   let c = compiled.get(key);
   if (c) return c;
-  const rule = (RULES as Record<string, any>)[id];
+  const rule = ruleOf(id);
   const rows = legendOf(id).fields;
   const map = remap(id, rows, palette);
   const colorExpr = map ? recolorExpression(rule.color, map) : rule.color;
@@ -180,7 +254,7 @@ export function legendRange(name: string): [number, number, boolean, boolean] | 
 
 /** a layer's filter and colour as MapLibre expressions (in the chosen palette): the flat map draws them as they are */
 export function layerStyle(id: string, palette: PaletteName): { filter: unknown; color: unknown; source: string } {
-  const rule = (RULES as Record<string, any>)[id];
+  const rule = ruleOf(id);
   const map = remap(id, legendOf(id).fields, palette);
   // on its own tiles a layer draws as in the current map app: its own source and its original filter
   return { filter: rule.sourceFilter, color: map ? recolorExpression(rule.color, map) : rule.color, source: rule.source };
@@ -190,7 +264,7 @@ export function layerStyle(id: string, palette: PaletteName): { filter: unknown;
 export function legendColors(theme: Theme, palette: PaletteName): number[] {
   if (theme.area) return legendRows(theme.area).map((r) => r.color);
   const id = theme.sections?.[0].legend ?? theme.layers[0];
-  return compile(id, palette).legend.map((r) => r.color);
+  return dynamic.get(id)?.strip ?? compile(id, palette).legend.map((r) => r.color);
 }
 
 /** the database legend of any layer (also the area layers, which colour no buildings): name + colour per row */
