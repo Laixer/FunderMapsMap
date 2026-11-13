@@ -106,6 +106,17 @@ const ATTRIBUTION = `${BUILDINGS_3D.attribution} · Bomen <a href="https://www.p
 
 const nf = new Intl.NumberFormat('nl-NL');
 const nf1 = new Intl.NumberFormat('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+/**
+ * Whether this device draws WebGL in software, asked of a throwaway context: when the first view is chosen the map is
+ * not there yet. The context is given back at once (a page gets only a few).
+ */
+function softwareDevice(): boolean {
+  const gl = document.createElement('canvas').getContext('webgl2');
+  const software = softwareRenderer(gl);
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  return software;
+}
+
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
@@ -209,6 +220,14 @@ export class MapController {
       .then((json) => prepareStyle(json, ui.mode))
       .catch(() => BASEMAP as any); // the plain style URL then; it is restyled once loaded
     const target = route.building ? locate(route.building, AbortSignal.timeout(8000)) : null;
+    // 3D or 2D: what the visitor chose before; else 2D on a phone and without a GPU, where the 3D models cost too much
+    // (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other. Known before the
+    // map is made, so a 2D map opens as one, and a 3D map's engine comes down while the session and the mapset are
+    // looked up, as it did when it was part of the page's script.
+    const software = softwareDevice();
+    const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
+    const flat = asked === 'flat' || (asked !== '3d' && (software || matchMedia('(max-width: 640px)').matches));
+    if (!flat) void import('@/engine/engine3d').catch(() => undefined);
     // Who is looking decides which mapsets there are: a user has their organisation's, and any public one by its
     // link; a guest only public ones. Every view is a mapset's view, as on the current map: its layers, inside its
     // fence. Without one there is no data on the map.
@@ -240,13 +259,18 @@ export class MapController {
     const all = m && !own.some((x) => x.id === m.id) ? [m, ...own] : own;
     ui.mapsets = all.map((x) => ({ id: x.id, slug: x.slug, name: x.name }));
     ui.owner = user?.organizations[0]?.name ?? null;
-    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user);
+    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user, software, flat);
   }
 
   private constructor(container: HTMLElement, private ui: UiState, style: any, route: Route, mapset: Mapset | null,
-    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean) {
+    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean, software: boolean, flat: boolean) {
+    this.software = software;
+    this.wantFlat = flat;
+    ui.flat = flat;
     // the opening sweep is for a first visit; someone coming back to where they were just gets their view
     const intro = location.hash.length <= 1 && !saved;
+    // the sweep belongs to the 3D view: a first visit in 2D opens seen from straight above, without a jump
+    const sweep = intro && !flat;
     // where to open (the hash, when there is one, wins inside MapLibre): the building, ?lat&lng, the mapset, Rotterdam
     const start = target ? { ...START, center: [target.lon, target.lat] as [number, number], zoom: 17.4, pitch: 60 }
       : route.lat !== null && route.lng !== null ? { ...START, center: [route.lng, route.lat] as [number, number], zoom: 17, pitch: 60 }
@@ -268,9 +292,9 @@ export class MapController {
       container,
       style,
       center: start.center,
-      zoom: intro ? start.zoom - 0.4 : start.zoom,
-      pitch: intro ? 38 : start.pitch,
-      bearing: intro ? start.bearing - 78 : start.bearing,
+      zoom: sweep ? start.zoom - 0.4 : start.zoom,
+      pitch: sweep ? 38 : intro ? 0 : start.pitch,
+      bearing: sweep ? start.bearing - 78 : intro ? 0 : start.bearing,
       maxPitch: 78,
       hash: true,
       canvasContextAttributes: { antialias: true },
@@ -279,14 +303,7 @@ export class MapController {
     this.map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
     this.map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), 'top-right');
     this.map.addControl(new ScaleControl({ maxWidth: 110 }), 'bottom-right');
-    // 3D or blocks: what the visitor chose before; else blocks on a phone and without a GPU, where the 3D models
-    // cost too much (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other.
-    // Decided here, on the map's own WebGL context, so the 3D engine is not needed to know it.
-    this.software = softwareRenderer(this.map.getCanvas().getContext('webgl2'));
-    const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
-    this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.software || matchMedia('(max-width: 640px)').matches));
-    ui.flat = this.wantFlat;
-    // a 3D map fetches its engine while the map itself loads, as it did when the engine was part of the page's script
+    // a 3D map has asked for its engine already (create): this takes it from there and starts its workers
     if (!this.wantFlat) void this.load3d();
     if (mapset) this.setMapset(mapset);
     else { this.restoreTheme(); ui.group = this.theme.group; ui.themeId = this.theme.id; this.renderLayers(); this.renderLegend(); }
