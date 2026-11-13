@@ -1,5 +1,6 @@
 // A small pool of tile workers (tile-worker.ts, bundled by Vite); one request per tile, cancellable.
-import type { Frame, LoadedTile } from './tiles';
+import type { Frame } from './frame';
+import type { LoadedTile } from './tiles';
 
 interface Pending { resolve: (t: LoadedTile) => void; reject: (e: Error) => void; worker: Worker }
 

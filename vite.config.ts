@@ -30,7 +30,9 @@ export default defineConfig(() => {
       rollupOptions: { output: names },
     },
     build: {
-      // maplibre-gl (~1.5 MB) and three (~0.7 MB) are the floor of the bundle, each in its own chunk
+      // maplibre-gl (~1.2 MB) is the floor of the bundle and three (~0.5 MB) the floor of the 3D engine, each in its
+      // own chunk. Only the 3D view fetches three: it hangs under src/engine/engine3d.ts, which the map loads with
+      // import(). A static import of three, or of a module that imports it, from the page's own script undoes that.
       chunkSizeWarningLimit: 1800,
       rollupOptions: {
         output: {

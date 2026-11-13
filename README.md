@@ -71,7 +71,9 @@ pnpm build      # type check + production build into dist/
 - **3D or 2D:** the "3D-panden" switch chooses between the 3D models and a plain 2D map: our own building tiles as
   flat shapes, seen from straight above. The choice is remembered. Without a choice a phone and a device without a GPU
   start in 2D, everything else in 3D; `?view=3d|flat` tries the other once. When the 3D source cannot be reached the
-  buildings stand up as blocks from the same tiles, so the map still reads as the 3D one.
+  buildings stand up as blocks from the same tiles, so the map still reads as the 3D one. The 3D engine (three.js, the
+  scene, the tile workers and the tileset walk, behind `src/engine/engine3d.ts`) is a part of the build of its own,
+  fetched the first time the 3D view is shown: a 2D map downloads none of it.
 - **Trees (a prototype):** in the 3D view, from zoom 15, every tree the BGT has registered stands on the map: the
   BGT's tree points from PDOK (`src/data/trees.ts`, per map cell, removed trees left out) drawn as one low-poly tree
   per point with instancing (`BuildingLayer.setTrees`), lit like the buildings and casting shadows. The BGT says where a

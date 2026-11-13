@@ -4,7 +4,9 @@
 // switch rewrites a few KB and cross-fades; new tiles grow out of the ground.
 import * as THREE from 'three';
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MapLibreMap } from 'maplibre-gl';
-import { mercatorX, mercatorY, type Frame, type LoadedTile } from './tiles';
+import { mercatorX, mercatorY, type Frame } from './frame';
+import { softwareRenderer } from './gpu';
+import type { LoadedTile } from './tiles';
 import type { Cutaway, Footprint } from './foundation';
 
 export type Mode = 'light' | 'dark';
@@ -465,9 +467,7 @@ export class BuildingLayer implements CustomLayerInterface {
     this.map = map;
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl });
     this.renderer.autoClear = false;
-    const info = gl.getExtension('WEBGL_debug_renderer_info');
-    const gpu = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
-    this.software = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu);
+    this.software = softwareRenderer(gl);
     const size = this.software ? 1024 : this.renderer.capabilities.maxTextureSize >= 8192 && window.innerWidth > 700 ? 4096 : 2048;
     const depth = new THREE.DepthTexture(size, size);
     depth.compareFunction = THREE.LessEqualCompare;
