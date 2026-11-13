@@ -3,7 +3,9 @@ import { reactive } from 'vue';
 import { api, onSessionExpired } from './client';
 import { LOGIN_HOST } from '@/config';
 
-export interface Organization { id: string; name: string; role: string }
+/** the FunderMaps person an organisation's users can turn to; set per organisation in Beheer, the details are that person's own profile */
+export interface AccountHolder { name: string | null; jobTitle: string | null; email: string; phoneNumber: string | null; picture: string | null }
+export interface Organization { id: string; name: string; role: string; accountHolder: AccountHolder | null }
 export interface User {
   id: string;
   email: string;
@@ -16,9 +18,11 @@ export interface User {
   organizations: Organization[];
 }
 
+interface ApiAccountHolder { name?: string | null; job_title?: string | null; email?: string | null; phone_number?: string | null; picture?: string | null }
+interface ApiOrganization { id: string; name: string; role: string; account_holder?: ApiAccountHolder | null }
 interface ApiUserMe {
   id: string; email: string; given_name: string | null; family_name: string | null; job_title: string | null;
-  phone_number: string | null; organizations?: Organization[];
+  phone_number: string | null; organizations?: ApiOrganization[];
 }
 
 export const session = reactive<{ ready: boolean; user: User | null }>({ ready: false, user: null });
@@ -27,7 +31,15 @@ function fromApi(u: ApiUserMe): User {
   const name = [u.given_name, u.family_name].filter(Boolean).join(' ').trim();
   return {
     id: u.id, email: u.email, givenName: u.given_name, familyName: u.family_name, jobTitle: u.job_title,
-    phoneNumber: u.phone_number, name: name || u.email, organizations: u.organizations ?? [],
+    phoneNumber: u.phone_number, name: name || u.email,
+    organizations: (u.organizations ?? []).map((o) => {
+      const h = o.account_holder;
+      // without an address there is nothing to reach the person by: that organisation gets the general contact
+      return {
+        id: o.id, name: o.name, role: o.role,
+        accountHolder: h?.email ? { name: h.name ?? null, jobTitle: h.job_title ?? null, email: h.email, phoneNumber: h.phone_number ?? null, picture: h.picture ?? null } : null,
+      };
+    }),
   };
 }
 
