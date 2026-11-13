@@ -15,14 +15,14 @@ import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
 import { TreeData } from '@/data/trees';
-import { buildingInfo, type BuildingInfo } from '@/search/search';
+import { bagId, buildingInfo, type BuildingInfo } from '@/search/search';
 import { fenceExpression, fenceTest, listMapsets, loadMapset, type Mapset } from '@/map/mapsets';
 import { loadPosition, savePosition, type Position } from '@/map/position';
-import { loadSession } from '@/api/session';
+import { loadSession, toLogin } from '@/api/session';
 import { parseRoute, writeRoute, type Route } from '@/map/route';
 import { markdown } from '@/lib/markdown';
 import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
-import { BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
+import { ALL_LAYERS, BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
 
 setWorkerUrl(maplibreWorker);
 
@@ -53,6 +53,8 @@ export interface UiState {
   ownerOnly: boolean;
   /** a message above the layers, e.g. a mapset in the address that could not be opened */
   notice: string;
+  /** a logged-in user whose organisation has no map: nothing to show but that, and the way out */
+  noMapsets: boolean;
   legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string };
   status: { text: string; busy: boolean };
   tooltip: null | { x: number; y: number; title: string; more: string; swatch: string; valueTitle: string; valueLabel: string; facts: [string, string][] };
@@ -70,7 +72,7 @@ export function initialUi(): UiState {
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, trees: store.get('fm-trees') !== 'off', notice: '',
+    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, trees: store.get('fm-trees') !== 'off', notice: '', noMapsets: false,
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -186,28 +188,40 @@ export class MapController {
    * Start the map on the basemap already restyled, so the original basemap never shows while it loads. A mapset and a
    * building in the address are looked up at the same time, so the map opens on them.
    */
-  static async create(container: HTMLElement, ui: UiState, route: Route): Promise<MapController> {
+  static async create(container: HTMLElement, ui: UiState, route: Route): Promise<MapController | null> {
     const style = fetch(BASEMAP)
       .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
       .then((json) => prepareStyle(json, ui.mode))
       .catch(() => BASEMAP as any); // the plain style URL then; it is restyled once loaded
     const target = route.building ? locate(route.building, AbortSignal.timeout(8000)) : null;
-    // who is looking decides which mapsets there are: a user has their organisation's, a guest only what a link names
+    // Who is looking decides which mapsets there are: a user has their organisation's, and any public one by its
+    // link; a guest only public ones. Every view is a mapset's view, as on the current map: its layers, inside its
+    // fence. Without one there is no data on the map.
     const user = await loadSession();
     const own = user ? await listMapsets(AbortSignal.timeout(8000)).catch(() => [] as Mapset[]) : [];
-    let wanted = route.mapset;
-    if (!wanted && own.length) {
-      // no mapset in the address: the one this user looked at last, else their first
-      const last = store.get('last-viewed-private-mapset') ?? store.get('last-viewed-public-mapset');
-      wanted = (own.find((x) => x.id === last) ?? own[0]).slug;
-    }
-    const listed = wanted ? own.find((x) => x.id === wanted || x.slug === wanted) : undefined;
-    const mapset = listed ?? (wanted ? loadMapset(wanted, !!user, AbortSignal.timeout(8000)).catch(() => null) : null);
+    const open = async (idOrSlug: string): Promise<Mapset | null> =>
+      own.find((x) => x.id === idOrSlug || x.slug === idOrSlug) ?? (await loadMapset(idOrSlug, !!user, AbortSignal.timeout(8000)).catch(() => null));
+    const mapset = (async (): Promise<Mapset | null> => {
+      // The one in the address; else the one looked at last; else a user's first. "Last" is this map's own note of it,
+      // and for someone coming from the current map that app's two notes, a public one first as it does. A guest has
+      // no private one: theirs does not open, and the next is tried.
+      let m = route.mapset ? await open(route.mapset) : null;
+      for (const key of user ? ['fm-last-mapset', 'last-viewed-public-mapset', 'last-viewed-private-mapset'] : ['fm-last-mapset', 'last-viewed-public-mapset']) {
+        const last = m ? null : store.get(key);
+        if (last && last !== route.mapset) m = await open(last);
+      }
+      return m ?? own[0] ?? null;
+    })();
     // where the visitor last was, unless the address already says where to look
     const position = route.building || route.lat !== null || location.hash.length > 1 ? null : loadPosition(!!user);
     const [s, m, t, p] = await Promise.all([style, mapset, target, position]);
-    if (route.mapset && !m) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet openbaar. U ziet alle lagen.`;
-    else if (user && !own.length && !m) ui.notice = 'Er zijn nog geen kaarten voor uw organisatie. U ziet alle lagen; neem contact op met FunderMaps voor een eigen kaart.';
+    if (!m && !ALL_LAYERS) {
+      // nothing to show. A guest logs in (and comes back to this address); a user is told, and can log out.
+      if (!user) { toLogin(); return new Promise<null>(() => { /* the page is leaving */ }); }
+      ui.noMapsets = true;
+      return null;
+    }
+    if (route.mapset && m && m.id !== route.mapset && m.slug !== route.mapset) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet voor u beschikbaar. U ziet “${m.name}”.`;
     const all = m && !own.some((x) => x.id === m.id) ? [m, ...own] : own;
     ui.mapsets = all.map((x) => ({ id: x.id, slug: x.slug, name: x.name }));
     ui.owner = user?.organizations[0]?.name ?? null;
@@ -684,7 +698,8 @@ export class MapController {
     this.pendingSelect = target.buildingId ?? null;
     this.select(null);
     this.map.flyTo({ center: [target.lon, target.lat], zoom: Math.max(this.map.getZoom(), target.zoom), pitch: 60, bearing: this.map.getBearing(), duration: 2600, essential: true });
-    this.map.once('moveend', () => { for (const e of this.entries.values()) this.trySelectPending(e); });
+    // the tile or the data may be there already (a building close by): then nothing arrives any more to select it on
+    this.map.once('moveend', () => { for (const e of this.entries.values()) this.trySelectPending(e); this.trySelectPendingFlat(); });
   }
 
   get centre(): { lon: number; lat: number } {
@@ -719,6 +734,7 @@ export class MapController {
     this.ui.themeId = this.theme.id;
     this.ui.mapset = { id: m.id, name: m.name, note: m.note ? markdown(m.note) : '', consent: m.consent ? markdown(m.consent) : '' };
     store.set(m.public ? 'last-viewed-public-mapset' : 'last-viewed-private-mapset', m.id);
+    store.set('fm-last-mapset', m.id);
     this.applyFence();
     document.title = `${m.name} · Funderingskaart`;
     this.applyTheme(false);
@@ -769,7 +785,15 @@ export class MapController {
   private trySelectPendingFlat() {
     if (!this.flat || !this.pendingSelect) return;
     const b = this.data.index.get(this.pendingSelect);
-    if (b === undefined) return;
+    if (b === undefined) {
+      // Not in our data, or outside this map's area. Once the map has arrived and nothing is loading any more, the
+      // building still opens, on its address alone.
+      if (this.data.loading > 0 || this.map.isMoving()) return;
+      const id = this.pendingSelect;
+      this.pendingSelect = null;
+      this.selectFlat({ id, props: { building_id: `NL.IMBAG.PAND.${id}` } });
+      return;
+    }
     const props = this.data.buildings[b];
     this.pendingSelect = null;
     this.selectFlat({ id: String(props.id), props });
@@ -919,6 +943,8 @@ export class MapController {
     const v = this.valueOf(b, pand);
     const height = heightOf(f, p);
     const rel = p.foundation_type_reliability ? L.RELIABILITY[String(p.foundation_type_reliability)] ?? String(p.foundation_type_reliability) : null;
+    // a guest gets what the public map already says with its colour, and the BAG's own facts: nothing more of ours
+    if (!this.isUser) p = {};
     const facts: [string, string | null][] = [
       ['Bouwjaar', p.construction_year ? String(p.construction_year) : f?.builtYear ? String(f.builtYear) : null],
       ['Hoogte', height !== null ? `${nf1.format(height)} m${f?.storeys ? ` · ${f.storeys} lagen` : ''}` : null],
@@ -931,7 +957,7 @@ export class MapController {
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
     this.ui.tooltip = {
       x, y,
-      title: b >= 0 ? 'Pand' : 'Pand zonder FunderMaps-gegevens',
+      title: b >= 0 || !this.isUser ? 'Pand' : 'Pand zonder FunderMaps-gegevens',
       more: count > 1 ? `${nf.format(count)} adressen` : count === 1 ? '1 adres' : '',
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       facts: facts.filter((x): x is [string, string] => !!x[1]).slice(0, 6),
@@ -968,9 +994,12 @@ export class MapController {
       this.ui.info = null;
       return;
     }
+    const v = this.valueOf(b, pandId);
+    // a guest's card: the address, the active layer's value (the colour on the map) and the BAG's own facts. Our data
+    // on the building is for a logged-in user, in the building panel.
+    if (!this.isUser) p = {};
     const rel = (k: string) => (p[k] ? ` · ${L.RELIABILITY[String(p[k])] ?? String(p[k])}` : '');
     const height = heightOf(f, p);
-    const v = this.valueOf(b, pandId);
     const place = this.place;
     const address = place?.street ? `${place.street} ${place.building_number ?? ''}`.trim() : null;
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
@@ -981,7 +1010,7 @@ export class MapController {
       sub: [place?.postal_code ? `${place.postal_code.slice(0, 4)} ${place.postal_code.slice(4)}` : null, count > 1 ? `en ${nf.format(count - 1)} ander${count > 2 ? 'e' : ''} adres${count > 2 ? 'sen' : ''}` : null].filter(Boolean).join(' · '),
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       hasData: b >= 0,
-      stats: [
+      stats: !this.isUser ? [] : [
         ['Bouwjaar', String(p.construction_year ?? f?.builtYear ?? '–')],
         ['Hoogte', height !== null ? `${nf1.format(height)} m` : '–'],
         ['Pandzakking', typeof p.velocity === 'number' ? `${nf1.format(p.velocity)} mm/j` : '–'],
@@ -1017,7 +1046,8 @@ export class MapController {
 
 /** a building from the address (pand number or an old gfm id) → its pand number and where it is (our geocoder) */
 async function locate(id: string, signal?: AbortSignal): Promise<{ pand: string; lon: number; lat: number } | null> {
-  const info = await buildingInfo(/^\d{16}$/.test(id) ? `NL.IMBAG.PAND.${id}` : id, signal);
+  // a pand number, or what the current map put in its links after an address search: the address's own BAG number
+  const info = await buildingInfo(bagId(id) ?? id, signal);
   if (!info?.building_id || typeof info.building_lon !== 'number' || typeof info.building_lat !== 'number') return null;
   return { pand: info.building_id.slice(-16), lon: info.building_lon, lat: info.building_lat };
 }

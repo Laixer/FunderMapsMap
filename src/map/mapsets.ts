@@ -28,6 +28,8 @@ export interface Mapset {
  * store/mapsets.ts, "remove once the API returns the correct fencing values"). Kept the same until that is fixed.
  */
 const PUBLIC_FENCES: Record<string, Partial<Fence>> = {
+  'dordrecht-publiek': { municipality: ['GM0505'] },
+  'oudewater-publiek': { municipality: ['GM0589'] },
   'schiedam-publiek': { municipality: ['GM0606'] },
   'woerden-publiek': { municipality: ['GM0632'] },
 };

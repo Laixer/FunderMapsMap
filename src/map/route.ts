@@ -14,10 +14,17 @@ export interface Route {
   lng: number | null;
 }
 
-/** the 16-digit pand number of NL.IMBAG.PAND.0599100000761761, 0599100000761761 or 599100000761761; null otherwise */
+/**
+ * The 16-digit pand number of NL.IMBAG.PAND.0599100000761761, 0599100000761761 or 599100000761761; null otherwise.
+ * Bare digits count only when they are a pand's: the digits 5 and 6 of a BAG number say what it is (10 a pand, 20 an
+ * address). The current map put an address's number in its links after an address search; that one stays as it is and
+ * the geocoder finds its building.
+ */
 export function pandNumber(id: string): string | null {
-  const m = /^(?:NL\.IMBAG\.PAND\.)?(\d{15,16})$/i.exec(id.trim());
-  return m ? m[1].padStart(16, '0') : null;
+  const m = /^(NL\.IMBAG\.PAND\.)?(\d{15,16})$/i.exec(id.trim());
+  if (!m) return null;
+  const digits = m[2].padStart(16, '0');
+  return m[1] || digits.slice(4, 6) === '10' ? digits : null;
 }
 
 export function parseRoute(loc: { pathname: string; search: string } = location): Route {
@@ -39,7 +46,7 @@ export function routePath(r: Pick<Route, 'mapset' | 'building' | 'panel'>): stri
   if (!r.mapset) return '/';
   const base = `/map/${encodeURIComponent(r.mapset)}`;
   if (!r.building) return base;
-  const id = /^\d{16}$/.test(r.building) ? `NL.IMBAG.PAND.${r.building}` : encodeURIComponent(r.building);
+  const id = pandNumber(r.building) ? `NL.IMBAG.PAND.${pandNumber(r.building)}` : encodeURIComponent(r.building);
   return `${base}/building/${id}${r.panel ? `/${encodeURIComponent(r.panel)}` : ''}`;
 }
 

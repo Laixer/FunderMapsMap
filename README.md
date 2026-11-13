@@ -33,6 +33,13 @@ pnpm build      # type check + production build into dist/
   set, note, disclaimer, centre and fence. `/map/<mapset>/building/<pand id>(/<panel>)` opens a building on it; the
   current map app's old forms (`/kaart/…`, `…/gebouw/…`) and `?lat=…&lng=…` work too. The camera is in the hash
   (`src/map/route.ts`).
+- **Who sees what:** every view is a mapset's view, as on the current map; without a mapset there is no data on the
+  map. A guest gets public mapsets only: the one in the address, else the public one looked at last, else the login
+  page. A user gets the mapset in the address, else the one looked at last, else their first; an unknown or foreign
+  one falls back to their own, with a note; without any mapset they are told so (`components/NoMapsets.vue`). Of a
+  building a guest sees the address, the active layer's value (what the colour already says) and the BAG's own
+  facts: nothing else of our data, not on the page and not in its state. The view with every layer of the country
+  exists only for work on the layers (`pnpm dev`, or a build with `VITE_ALL_LAYERS=1`).
 - **Login:** the session is the API's cookie (Better Auth), nothing of it is kept here. `src/api/session.ts` asks
   `/api/user/me` once; without a session the visitor is a guest. The login pages are the current map app's:
   `/login`, `/forgot-password`, `/reset-password`, `/account` (passkeys, sign-out), plus the profile and password
@@ -47,7 +54,7 @@ pnpm build      # type check + production build into dist/
   samples and documents), Incidenten, the statistics of the neighbourhood (Chart.js, loaded with the dialog) and the
   PDF report. The view is in the address (`…/building/<pand>/<panel>`). Labels and enum texts are frozen from the
   current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest keeps
-  the card with what the map itself knows, and the way to log in. The analysis and statistics calls are the billed
+  a card with the address and the way to log in (see "Who sees what"). The analysis and statistics calls are the billed
   ones, as today. Under each risk the Funderingsrisico view says "Waarom deze risico-indicatie?": what the letter rests
   on, as the model recorded it and the analysis sends it (`explanation`), worded in `src/panel/explanation.ts`.
 - **A user's own mapsets:** with a login the organisation's mapsets come from `/api/mapset`; a picker in the panel
@@ -86,6 +93,7 @@ No private data lives in this repository or the bundle.
 | `VITE_API_URL` | `https://api.fundermaps.com` |
 | `VITE_LOGIN_HOST` | `https://maps.fundermaps.com` |
 | `VITE_CONTACT_EMAIL` | `info@fundermaps.com` |
+| `VITE_ALL_LAYERS` | unset; `1` shows every layer without a mapset (never for production) |
 | `VITE_PDOK_LOCATIONSERVICE` | `https://api.pdok.nl/bzk/locatieserver/search/v3_1` |
 | `VITE_3D_URL` | `https://api.pdok.nl/kadaster/3d-basisvoorziening/ogc/v1/collections/gebouwen/` |
 | `VITE_3D_ROOT` | `3dtiles?f=json` (3D BAG: `tileset.json`) |

@@ -23,6 +23,11 @@ export const BGT = (env.VITE_BGT_URL ?? 'https://api.pdok.nl/lv/bgt/ogc/v1').rep
  * name the login pages forward to the same page here.
  */
 export const LOGIN_HOST = (env.VITE_LOGIN_HOST ?? 'https://maps.fundermaps.com').replace(/\/$/, '');
+/**
+ * Every layer for the whole country, without a mapset: for work on the layers themselves (`pnpm dev`, or a build with
+ * VITE_ALL_LAYERS=1). Never in a production build: there every view is a mapset's view.
+ */
+export const ALL_LAYERS = env.DEV || env.VITE_ALL_LAYERS === '1';
 /** where a user's questions go when their organisation has no account holder */
 export const CONTACT_EMAIL = env.VITE_CONTACT_EMAIL ?? 'info@fundermaps.com';
 export const COMMIT = env.VITE_GIT_COMMIT_HASH ?? 'dev';
