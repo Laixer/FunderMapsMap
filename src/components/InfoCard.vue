@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// The card of the selected pand: address (our public geocoder), the active layer's value, key figures, every
-// FunderMaps field we have for it and the 3D BAG facts. The full building panel of today's map comes in a later step.
+// The card of the selected pand for a visitor who is not logged in: the address (our public geocoder), the active
+// layer's value (what the colour on the map already says) and the BAG's own facts. Our data on the building is for a
+// logged-in user, in the building panel; here is the way to log in.
 import { ref } from 'vue';
 import type { UiState } from '@/map/controller';
 
@@ -23,18 +24,18 @@ const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => {
       </button>
     </header>
     <div class="hero"><span class="sw" :style="{ background: info.swatch }"></span><div><small>{{ info.valueTitle }}</small><strong>{{ info.valueLabel }}</strong></div></div>
-    <template v-if="info.hasData">
+    <template v-if="info.hasData && !guest">
       <div class="stats">
         <div v-for="[k, v] in info.stats" :key="k" class="stat"><small>{{ k }}</small><b>{{ v }}</b></div>
       </div>
       <dl><template v-for="[k, v] in info.rows" :key="k"><dt>{{ k }}</dt><dd>{{ v }}</dd></template></dl>
     </template>
-    <p v-else class="notice">Geen FunderMaps-gegevens voor dit pand.</p>
-    <details :open="!info.hasData">
+    <p v-else-if="!guest" class="notice">Geen FunderMaps-gegevens voor dit pand.</p>
+    <details :open="!info.hasData || guest">
       <summary>3D BAG</summary>
       <dl><template v-for="[k, v] in info.bag" :key="k"><dt>{{ k }}</dt><dd>{{ v }}</dd></template></dl>
     </details>
-    <p v-if="guest" class="more">Onderzoek, herstel, statistieken en het PDF-rapport van dit pand zie je als je bent ingelogd. <button class="chip" @click="$emit('login')">Inloggen</button></p>
+    <p v-if="guest" class="more">De gegevens van dit pand (fundering, risico, onderzoek, herstel, statistieken en het PDF-rapport) zie je als je bent ingelogd. <button class="chip" @click="$emit('login')">Inloggen</button></p>
     <div class="idline"><code>{{ info.id }}</code><button class="chip" @click="copy(info.id)">{{ copied ? 'Gekopieerd' : 'Kopiëren' }}</button></div>
   </aside>
 </template>

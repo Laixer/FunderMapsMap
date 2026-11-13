@@ -5,24 +5,27 @@ import { Map as MapLibreMap, NavigationControl, ScaleControl, GeolocateControl, 
 // MapLibre 6 looks for its worker as `maplibre-gl-worker.mjs` next to its own file, a name the bundler cannot see, so
 // the worker never ends up in the build ("Worker failed to load"). Ship it as an asset and say where it is.
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { makeFrame, type Frame, type TileFeature } from '@/engine/tiles';
-import { TileWorkers } from '@/engine/workers';
-import { BuildingLayer, type Mode, type TileView } from '@/engine/scene';
+import { makeFrame, type Frame } from '@/engine/frame';
+import { softwareRenderer } from '@/engine/gpu';
+// Of the 3D engine only types are imported here: the engine itself is fetched when the 3D view is shown (load3d).
+import type { Engine3d } from '@/engine/engine3d';
+import type { TileFeature } from '@/engine/tiles';
+import type { BuildingLayer, Mode, TileView } from '@/engine/scene';
 import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
-import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, type Theme, type ThemeResult } from '@/engine/themes';
+import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, updateOwners, type Theme, type ThemeResult } from '@/engine/themes';
 import AREA_LAYERS from '@/config/area-layers.json';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
 import { BuildingData, type Props } from '@/data/building-data';
 import { TreeData } from '@/data/trees';
-import { buildingInfo, type BuildingInfo } from '@/search/search';
+import { bagId, buildingInfo, type BuildingInfo } from '@/search/search';
 import { fenceExpression, fenceTest, listMapsets, loadMapset, type Mapset } from '@/map/mapsets';
 import { loadPosition, savePosition, type Position } from '@/map/position';
-import { loadSession } from '@/api/session';
+import { loadSession, toLogin } from '@/api/session';
 import { parseRoute, writeRoute, type Route } from '@/map/route';
 import { markdown } from '@/lib/markdown';
-import { Bag3dTileset, type LeafTile } from '@/engine/bag3d-tileset';
-import { BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
+import type { LeafTile } from '@/engine/bag3d-tileset';
+import { ALL_LAYERS, BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
 
 setWorkerUrl(maplibreWorker);
 
@@ -53,6 +56,8 @@ export interface UiState {
   ownerOnly: boolean;
   /** a message above the layers, e.g. a mapset in the address that could not be opened */
   notice: string;
+  /** a logged-in user whose organisation has no map: nothing to show but that, and the way out */
+  noMapsets: boolean;
   legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string };
   status: { text: string; busy: boolean };
   tooltip: null | { x: number; y: number; title: string; more: string; swatch: string; valueTitle: string; valueLabel: string; facts: [string, string][] };
@@ -70,7 +75,7 @@ export function initialUi(): UiState {
     groups: GROUPS, group: THEMES[0].group, themeId: THEMES[0].id, layers: [],
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
-    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, trees: store.get('fm-trees') !== 'off', notice: '',
+    lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, trees: store.get('fm-trees') !== 'off', notice: '', noMapsets: false,
     legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
@@ -88,6 +93,11 @@ const tileDistance = (zoom: number) => Math.min(4500, Math.max(1200, 2200 * 2 **
 const MAX_TILES = 40;
 /** past this distance from the frame origin the scene starts over around the view (keeps float32 metres small) */
 const REFRAME_METRES = 40000;
+/**
+ * An empty layer that keeps the place of the 3D buildings in the style, above the ground layers and under the 2D
+ * buildings: the 3D layer itself is only there once its engine is loaded.
+ */
+const SLOT_3D = 'fm-3d-slot';
 const NEUTRAL: Record<Mode, { noData: number; context: number }> = {
   light: { noData: 0xdcdfe4, context: 0xeeeff1 },
   dark: { noData: 0x4a525d, context: 0x2b313a },
@@ -96,6 +106,17 @@ const ATTRIBUTION = `${BUILDINGS_3D.attribution} · Bomen <a href="https://www.p
 
 const nf = new Intl.NumberFormat('nl-NL');
 const nf1 = new Intl.NumberFormat('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+/**
+ * Whether this device draws WebGL in software, asked of a throwaway context: when the first view is chosen the map is
+ * not there yet. The context is given back at once (a page gets only a few).
+ */
+function softwareDevice(): boolean {
+  const gl = document.createElement('canvas').getContext('webgl2');
+  const software = softwareRenderer(gl);
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  return software;
+}
+
 const store = {
   get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
@@ -139,10 +160,17 @@ function fmt(value: unknown, labels?: Record<string, string>): string | null {
 export class MapController {
   map: MapLibreMap;
   private frame: Frame;
-  private layer: BuildingLayer;
-  private workers = new TileWorkers(2);
+  /**
+   * The 3D view. Its engine (three.js, the tile workers, the walk over the 3D tileset) is a part of the build of its
+   * own, fetched the first time the 3D view is shown (load3d); its layer is put on the map then (addLayer3d). A 2D map
+   * has neither, and downloads nothing of them.
+   */
+  private engine: Engine3d | null = null;
+  private layer: BuildingLayer | null = null;
+  private loading3d: Promise<Engine3d | null> | null = null;
+  /** this device draws in software (no GPU): the 3D models cost too much there */
+  private software = false;
   private data: BuildingData;
-  private tileset = new Bag3dTileset(BUILDINGS_3D.base, BUILDINGS_3D.root);
   /** the 3D BAG leaf tiles of the last walk, by uri */
   private leaves = new Map<string, LeafTile>();
   private walkSeq = 0;
@@ -186,38 +214,63 @@ export class MapController {
    * Start the map on the basemap already restyled, so the original basemap never shows while it loads. A mapset and a
    * building in the address are looked up at the same time, so the map opens on them.
    */
-  static async create(container: HTMLElement, ui: UiState, route: Route): Promise<MapController> {
+  static async create(container: HTMLElement, ui: UiState, route: Route): Promise<MapController | null> {
     const style = fetch(BASEMAP)
       .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
       .then((json) => prepareStyle(json, ui.mode))
       .catch(() => BASEMAP as any); // the plain style URL then; it is restyled once loaded
     const target = route.building ? locate(route.building, AbortSignal.timeout(8000)) : null;
-    // who is looking decides which mapsets there are: a user has their organisation's, a guest only what a link names
+    // 3D or 2D: what the visitor chose before; else 2D on a phone and without a GPU, where the 3D models cost too much
+    // (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other. Known before the
+    // map is made, so a 2D map opens as one, and a 3D map's engine comes down while the session and the mapset are
+    // looked up, as it did when it was part of the page's script.
+    const software = softwareDevice();
+    const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
+    const flat = asked === 'flat' || (asked !== '3d' && (software || matchMedia('(max-width: 640px)').matches));
+    if (!flat) void import('@/engine/engine3d').catch(() => undefined);
+    // Who is looking decides which mapsets there are: a user has their organisation's, and any public one by its
+    // link; a guest only public ones. Every view is a mapset's view, as on the current map: its layers, inside its
+    // fence. Without one there is no data on the map.
     const user = await loadSession();
     const own = user ? await listMapsets(AbortSignal.timeout(8000)).catch(() => [] as Mapset[]) : [];
-    let wanted = route.mapset;
-    if (!wanted && own.length) {
-      // no mapset in the address: the one this user looked at last, else their first
-      const last = store.get('last-viewed-private-mapset') ?? store.get('last-viewed-public-mapset');
-      wanted = (own.find((x) => x.id === last) ?? own[0]).slug;
-    }
-    const listed = wanted ? own.find((x) => x.id === wanted || x.slug === wanted) : undefined;
-    const mapset = listed ?? (wanted ? loadMapset(wanted, !!user, AbortSignal.timeout(8000)).catch(() => null) : null);
+    const open = async (idOrSlug: string): Promise<Mapset | null> =>
+      own.find((x) => x.id === idOrSlug || x.slug === idOrSlug) ?? (await loadMapset(idOrSlug, !!user, AbortSignal.timeout(8000)).catch(() => null));
+    const mapset = (async (): Promise<Mapset | null> => {
+      // The one in the address; else the one looked at last; else a user's first. "Last" is this map's own note of it,
+      // and for someone coming from the current map that app's two notes, a public one first as it does. A guest has
+      // no private one: theirs does not open, and the next is tried.
+      let m = route.mapset ? await open(route.mapset) : null;
+      for (const key of user ? ['fm-last-mapset', 'last-viewed-public-mapset', 'last-viewed-private-mapset'] : ['fm-last-mapset', 'last-viewed-public-mapset']) {
+        const last = m ? null : store.get(key);
+        if (last && last !== route.mapset) m = await open(last);
+      }
+      return m ?? own[0] ?? null;
+    })();
     // where the visitor last was, unless the address already says where to look
     const position = route.building || route.lat !== null || location.hash.length > 1 ? null : loadPosition(!!user);
     const [s, m, t, p] = await Promise.all([style, mapset, target, position]);
-    if (route.mapset && !m) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet openbaar. U ziet alle lagen.`;
-    else if (user && !own.length && !m) ui.notice = 'Er zijn nog geen kaarten voor uw organisatie. U ziet alle lagen; neem contact op met FunderMaps voor een eigen kaart.';
+    if (!m && !ALL_LAYERS) {
+      // nothing to show. A guest logs in (and comes back to this address); a user is told, and can log out.
+      if (!user) { toLogin(); return new Promise<null>(() => { /* the page is leaving */ }); }
+      ui.noMapsets = true;
+      return null;
+    }
+    if (route.mapset && m && m.id !== route.mapset && m.slug !== route.mapset) ui.notice = `De kaart “${route.mapset}” is niet gevonden of niet voor u beschikbaar. U ziet “${m.name}”.`;
     const all = m && !own.some((x) => x.id === m.id) ? [m, ...own] : own;
     ui.mapsets = all.map((x) => ({ id: x.id, slug: x.slug, name: x.name }));
     ui.owner = user?.organizations[0]?.name ?? null;
-    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user);
+    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user, software, flat);
   }
 
   private constructor(container: HTMLElement, private ui: UiState, style: any, route: Route, mapset: Mapset | null,
-    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean) {
+    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean, software: boolean, flat: boolean) {
+    this.software = software;
+    this.wantFlat = flat;
+    ui.flat = flat;
     // the opening sweep is for a first visit; someone coming back to where they were just gets their view
     const intro = location.hash.length <= 1 && !saved;
+    // the sweep belongs to the 3D view: a first visit in 2D opens seen from straight above, without a jump
+    const sweep = intro && !flat;
     // where to open (the hash, when there is one, wins inside MapLibre): the building, ?lat&lng, the mapset, Rotterdam
     const start = target ? { ...START, center: [target.lon, target.lat] as [number, number], zoom: 17.4, pitch: 60 }
       : route.lat !== null && route.lng !== null ? { ...START, center: [route.lng, route.lat] as [number, number], zoom: 17, pitch: 60 }
@@ -227,21 +280,21 @@ export class MapController {
     this.route = { ...route, building: target?.pand ?? route.building };
     this.pendingSelect = target?.pand ?? null;
     this.frame = makeFrame(start.center[0], start.center[1]);
-    this.layer = new BuildingLayer(this.frame);
     this.data = new BuildingData(TILESERVER, () => this.onData());
-    // the trees of each cell go to whichever scene is current (the scene starts over far across the country)
+    // the trees of each cell go to whichever scene is current (the scene starts over far across the country); a scene
+    // that comes later gets the cells kept here
     this.trees = new TreeData((key, lonLat) => {
       if (lonLat) this.treeCells.set(key, lonLat); else this.treeCells.delete(key);
-      this.layer.setTrees(key, lonLat);
+      this.layer?.setTrees(key, lonLat);
       this.renderStatus();
     });
     this.map = new MapLibreMap({
       container,
       style,
       center: start.center,
-      zoom: intro ? start.zoom - 0.4 : start.zoom,
-      pitch: intro ? 38 : start.pitch,
-      bearing: intro ? start.bearing - 78 : start.bearing,
+      zoom: sweep ? start.zoom - 0.4 : start.zoom,
+      pitch: sweep ? 38 : intro ? 0 : start.pitch,
+      bearing: sweep ? start.bearing - 78 : intro ? 0 : start.bearing,
       maxPitch: 78,
       hash: true,
       canvasContextAttributes: { antialias: true },
@@ -250,7 +303,8 @@ export class MapController {
     this.map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
     this.map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), 'top-right');
     this.map.addControl(new ScaleControl({ maxWidth: 110 }), 'bottom-right');
-    this.layer.lines = ui.lines;
+    // a 3D map has asked for its engine already (create): this takes it from there and starts its workers
+    if (!this.wantFlat) void this.load3d();
     if (mapset) this.setMapset(mapset);
     else { this.restoreTheme(); ui.group = this.theme.group; ui.themeId = this.theme.id; this.renderLayers(); this.renderLegend(); }
     // the address follows the map from here: canonical form (old /kaart/… and …/gebouw/… links), Back and Forward. An
@@ -265,7 +319,8 @@ export class MapController {
         id: 'selection-ring', type: 'circle', source: 'selection',
         paint: { 'circle-pitch-alignment': 'map', 'circle-color': '#3E63DD', 'circle-opacity': 0.08, 'circle-stroke-color': '#3E63DD', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': 0.6, 'circle-radius': 0 },
       }, firstSymbol);
-      this.map.addLayer(this.layer, firstSymbol);
+      // the place of the 3D buildings: they are put here once their engine is loaded (addLayer3d)
+      this.map.addLayer({ id: SLOT_3D, type: 'background', layout: { visibility: 'none' } }, firstSymbol);
       // flat mode: our own building tiles (layers added by renderFlat) and the outline of a building picked there
       this.map.addSource('fm', { type: 'vector', url: `${TILESERVER}/buildings` });
       this.map.addLayer({
@@ -274,13 +329,7 @@ export class MapController {
       }, firstSymbol);
       // without a GPU the shadow pass costs seconds per frame: start with shadows off there (?shadows=on forces them)
       const forced = new URLSearchParams(location.search).get('shadows');
-      this.layer.shadows = forced ? forced === 'on' : !this.layer.software;
-      ui.shadows = this.layer.shadows;
-      // 3D or blocks: what the visitor chose before; else blocks on a phone and without a GPU, where the 3D models
-      // cost too much (the current map app works on any phone), and 3D everywhere else. ?view=3d|flat tries the other.
-      const asked = new URLSearchParams(location.search).get('view') ?? store.get('fm-view');
-      this.wantFlat = asked === 'flat' || (asked !== '3d' && (this.layer.software || matchMedia('(max-width: 640px)').matches));
-      ui.flat = this.wantFlat;
+      ui.shadows = forced ? forced === 'on' : !this.software;
       this.applyMode(false);
       // the opening sweep belongs to the 3D view; a 2D map just opens, seen from straight above (unless the address
       // or a remembered position says how to look)
@@ -304,7 +353,7 @@ export class MapController {
           this.tooltipFor(b, b >= 0 ? this.data.buildings[b] : this.data.outside.has(id) ? {} : p, null, e.point.x, e.point.y, id);
           return;
         }
-        const hit = this.layer.pick(e.point.x, e.point.y, this.visible);
+        const hit = this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null;
         this.setHover(hit);
         this.renderTooltip(hit, e.point.x, e.point.y);
       });
@@ -312,11 +361,15 @@ export class MapController {
     this.map.on('mouseout', () => { this.setHover(null); this.renderTooltip(null, 0, 0); });
     this.map.on('movestart', () => this.renderTooltip(null, 0, 0));
     this.map.on('click', (e) => {
-      if (!this.flat) return this.select(this.layer.pick(e.point.x, e.point.y, this.visible));
+      if (!this.flat) return this.select(this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null);
       const p = this.flatAt(e.point.x, e.point.y);
       this.selectFlat(p ? { id: String(p.building_id).slice(-16), props: p } : null);
     });
-    if (location.search.includes('debug')) Object.assign(window as any, { __pick: (x: number, y: number) => this.layer.pick(x, y, this.visible), __layer: this.layer, __ctl: this });
+    if (location.search.includes('debug')) {
+      Object.assign(window as any, { __pick: (x: number, y: number) => this.layer?.pick(x, y, this.visible) ?? null, __ctl: this });
+      // the 3D layer comes later, and another one when the scene starts over: always the one there is now (or null)
+      Object.defineProperty(window, '__layer', { get: () => this.layer, configurable: true });
+    }
   }
 
   private firstSymbol() {
@@ -341,18 +394,44 @@ export class MapController {
     this.select(null);
     this.setHover(null);
     this.queue.length = 0;
-    for (const e of this.entries.values()) if (e.view) this.layer.removeTile(e.view);
+    for (const e of this.entries.values()) if (e.view) this.layer?.removeTile(e.view);
     this.entries.clear();
     this.entryOfView.clear();
     this.frame = makeFrame(lon, lat);
-    const lines = this.layer.lines, shadows = this.layer.shadows;
+    // a map that has not shown 3D yet has no scene to start over: its layer is made around the new origin when it comes
+    if (!this.engine || !this.layer) return;
     this.map.removeLayer(this.layer.id);
-    this.layer = new BuildingLayer(this.frame);
-    this.layer.lines = lines;
-    this.layer.shadows = shadows;
-    this.map.addLayer(this.layer, this.firstSymbol());
-    this.layer.setMode(this.ui.mode);
-    for (const [key, lonLat] of this.treeCells) this.layer.setTrees(key, lonLat);
+    this.addLayer3d(this.engine);
+  }
+
+  /**
+   * The 3D engine, fetched once. Null when it could not be fetched, or when 2D was chosen while it was on its way: it
+   * is asked for again the next time the 3D view is shown. Does not touch the map, so it can start before the map has
+   * loaded.
+   */
+  private load3d(): Promise<Engine3d | null> {
+    if (this.engine) return Promise.resolve(this.engine);
+    this.loading3d ??= import('@/engine/engine3d')
+      .then(({ createEngine3d }) => {
+        // back in 2D by the time it arrives: no workers are started for a view that is not shown
+        if (this.wantFlat) return null;
+        return (this.engine = createEngine3d(BUILDINGS_3D.base, BUILDINGS_3D.root));
+      })
+      .catch((err) => { console.error(err); return null; })
+      .finally(() => { this.loading3d = null; });
+    return this.loading3d;
+  }
+
+  /** a new 3D layer around the frame origin, in its place in the style, set as the map is now */
+  private addLayer3d(engine: Engine3d) {
+    const layer = (this.layer = engine.makeLayer(this.frame));
+    layer.lines = this.ui.lines;
+    layer.shadows = this.ui.shadows;
+    this.map.addLayer(layer, SLOT_3D);
+    // while our own tiles draw the buildings (2D, or blocks when the 3D models cannot be reached) it is hidden: setFlat
+    if (this.flat) this.map.setLayoutProperty(layer.id, 'visibility', 'none');
+    layer.setMode(this.ui.mode);
+    for (const [key, lonLat] of this.treeCells) layer.setTrees(key, lonLat);
   }
 
   // ---- trees ----
@@ -375,11 +454,27 @@ export class MapController {
 
   // ---- 3D tiles -----------------------------------------------------------------------------------------------------
   private async updateTiles() {
-    if (!this.map.getLayer(this.layer.id)) return this.renderStatus();
+    if (!this.map.getLayer(SLOT_3D)) return this.renderStatus();
     if (this.wantFlat) {
       if (!this.flat) this.setFlat(true);
       return this.renderStatus();
     }
+    // the 3D view is shown: the first time, its engine comes first
+    let engine = this.engine;
+    if (!engine) {
+      const fetched = this.load3d();
+      this.renderStatus();
+      engine = await fetched;
+      // 2D was chosen while it was on its way
+      if (this.wantFlat) return this.renderStatus();
+    }
+    if (!engine) {
+      // it could not be fetched (offline, or a newer version is live): blocks, as when the 3D models cannot be reached
+      if (!this.flat) this.setFlat(true);
+      return this.renderStatus();
+    }
+    // one layer, also when two view changes waited for the engine
+    if (!this.layer) this.addLayer3d(engine);
     if (this.map.getZoom() < MIN_ZOOM_3D) return this.renderStatus();
     const view = this.map.getBounds();
     const seq = ++this.walkSeq;
@@ -387,7 +482,7 @@ export class MapController {
     this.walking = true;
     this.renderStatus();
     try {
-      found = await this.tileset.leaves([view.getWest(), view.getSouth(), view.getEast(), view.getNorth()]);
+      found = await engine.tileset.leaves([view.getWest(), view.getSouth(), view.getEast(), view.getNorth()]);
       this.walkError = false;
       if (this.flat) this.setFlat(false);
     } catch (err) {
@@ -424,30 +519,33 @@ export class MapController {
       .sort((a, b) => distanceTo(b.bounds, c) - distanceTo(a.bounds, c));
     for (const e of spare.slice(0, this.entries.size - room)) {
       if (e.view === this.hovered?.view) this.setHover(null);
-      this.layer.removeTile(e.view!);
+      this.layer?.removeTile(e.view!);
       this.entryOfView.delete(e.view!);
       this.entries.delete(e.uri);
     }
   }
 
   private pump() {
+    // tiles are only queued by the 3D view, which has its engine and its layer by then
+    const engine = this.engine;
+    if (!engine) return;
     while (this.active < 4 && this.queue.length) {
       const uri = this.queue.shift()!;
       const t = this.leaves.get(uri);
       if (this.entries.has(uri) || !t) continue;
-      const { done } = this.workers.request(this.tileset.base + uri, this.frame, t.transform);
+      const { done } = engine.workers.request(engine.tileset.base + uri, this.frame, t.transform);
       const entry: TileEntry = { uri, bounds: t.bounds, state: 'loading' };
       const layer = this.layer;
       this.entries.set(uri, entry);
       this.active++;
       done
         .then((tile) => {
-          if (this.entries.get(uri) !== entry || layer !== this.layer) return;
+          if (this.entries.get(uri) !== entry || layer !== this.layer || !layer) return;
           entry.state = 'ready';
-          entry.view = this.layer.addTile(tile, new Uint8Array(tile.features.length * 4));
+          entry.view = layer.addTile(tile, new Uint8Array(tile.features.length * 4));
           this.entryOfView.set(entry.view, entry);
           this.linkFeatures(entry);
-          this.layer.setColors(entry.view, this.tileColors(entry), false);
+          layer.setColors(entry.view, this.tileColors(entry), false);
           this.trySelectPending(entry);
         })
         .catch((err) => {
@@ -489,7 +587,7 @@ export class MapController {
   }
 
   private repaintAll(animate: boolean) {
-    for (const entry of this.entries.values()) if (entry.view) this.layer.setColors(entry.view, this.tileColors(entry), animate);
+    for (const entry of this.entries.values()) if (entry.view) this.layer?.setColors(entry.view, this.tileColors(entry), animate);
   }
 
   // ---- data -----------------------------------------------------------------------------------------------------------
@@ -507,6 +605,9 @@ export class MapController {
   }
 
   private applyTheme(animate = true) {
+    // the ownership layer names the owners among the buildings loaded: rank them before colouring. When that changed
+    // its rule, renderFlat below draws the 2D layers with the new one (it draws them again on every call).
+    if (this.theme.layers.includes('owner')) updateOwners(this.data.buildings);
     // an area theme colours no buildings (they stay neutral) and draws its layer on the ground
     this.result = this.data.buildings.length && !this.theme.area ? evaluateTheme(this.theme, this.data.buildings, this.ui.palette) : null;
     this.renderLayers();
@@ -529,9 +630,10 @@ export class MapController {
   /** one of the current map app's own layers (area-layers.json) on the ground, under the 3D buildings */
   private addGround(layerId: string, id: string) {
     const spec = (AREA_LAYERS as Record<string, any>)[layerId];
-    if (!spec || !this.map.getLayer(this.layer.id)) return;
-    // the current map app keeps its layers hidden until a user turns them on: here they are on when added
-    this.map.addLayer({ ...spec, id, source: this.sourceFor(spec.source), layout: { ...spec.layout, visibility: 'visible' } }, this.layer.id);
+    if (!spec || !this.map.getLayer(SLOT_3D)) return;
+    // the current map app keeps its layers hidden until a user turns them on: here they are on when added. Under the 3D
+    // layer, or under its place when it is not there (yet): it then comes above them.
+    this.map.addLayer({ ...spec, id, source: this.sourceFor(spec.source), layout: { ...spec.layout, visibility: 'visible' } }, this.layer?.id ?? SLOT_3D);
   }
 
   private renderArea() {
@@ -551,7 +653,7 @@ export class MapController {
     this.flat = on;
     if (on) this.select(null);
     else this.selectFlat(null);
-    if (this.map.getLayer(this.layer.id)) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
+    if (this.layer) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
     this.renderFlat();
     this.renderStatus();
   }
@@ -565,7 +667,7 @@ export class MapController {
       this.walkSeq++;
       this.queue.length = 0;
       this.setHover(null);
-      for (const e of this.entries.values()) if (e.view) this.layer.removeTile(e.view);
+      for (const e of this.entries.values()) if (e.view) this.layer?.removeTile(e.view);
       this.entries.clear();
       this.entryOfView.clear();
       this.setFlat(true);
@@ -636,7 +738,7 @@ export class MapController {
 
   private selectFlat(sel: { id: string; props: Props } | null) {
     this.flatSelected = sel;
-    if (sel) { this.selected = null; this.layer.setSelected(null, -1); }
+    if (sel) { this.selected = null; this.layer?.setSelected(null, -1); }
     if (this.map.getLayer('fm-flat-selected')) {
       this.map.setFilter('fm-flat-selected', ['==', ['get', 'building_id'], sel ? String(sel.props.building_id) : '']);
     }
@@ -656,7 +758,7 @@ export class MapController {
   select(hit: Hit | null) {
     if (!hit && this.flatSelected) return this.selectFlat(null);
     this.selected = hit;
-    this.layer.setSelected(hit?.view ?? null, hit?.feature ?? -1);
+    this.layer?.setSelected(hit?.view ?? null, hit?.feature ?? -1);
     this.renderRing();
     this.loadPlace();
     this.renderInfo();
@@ -667,7 +769,7 @@ export class MapController {
     if (this.same(hit, this.hovered)) return;
     const previous = this.hovered?.view ?? null;
     this.hovered = hit;
-    this.layer.setHovered(hit?.view ?? null, hit?.feature ?? -1, previous);
+    this.layer?.setHovered(hit?.view ?? null, hit?.feature ?? -1, previous);
     this.map.getCanvas().style.cursor = hit ? 'pointer' : '';
   }
 
@@ -684,7 +786,8 @@ export class MapController {
     this.pendingSelect = target.buildingId ?? null;
     this.select(null);
     this.map.flyTo({ center: [target.lon, target.lat], zoom: Math.max(this.map.getZoom(), target.zoom), pitch: 60, bearing: this.map.getBearing(), duration: 2600, essential: true });
-    this.map.once('moveend', () => { for (const e of this.entries.values()) this.trySelectPending(e); });
+    // the tile or the data may be there already (a building close by): then nothing arrives any more to select it on
+    this.map.once('moveend', () => { for (const e of this.entries.values()) this.trySelectPending(e); this.trySelectPendingFlat(); });
   }
 
   get centre(): { lon: number; lat: number } {
@@ -695,8 +798,8 @@ export class MapController {
   private renderRing() {
     const source = this.map.getSource('selection') as GeoJSONSource | undefined;
     if (!source) return;
-    const s = this.layer.selection;
-    source.setData({ type: 'FeatureCollection', features: s ? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: this.layer.toLngLat(s.x, s.y) } }] : [] });
+    const s = this.layer?.selection;
+    source.setData({ type: 'FeatureCollection', features: s ? [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: this.layer!.toLngLat(s.x, s.y) } }] : [] });
     if (!s) return;
     const px = (zoom: number) => (s.radius + 3) * this.frame.scale * 512 * 2 ** zoom;
     this.map.setPaintProperty('selection-ring', 'circle-radius', ['interpolate', ['exponential', 2], ['zoom'], 10, px(10), 22, px(22)]);
@@ -719,6 +822,7 @@ export class MapController {
     this.ui.themeId = this.theme.id;
     this.ui.mapset = { id: m.id, name: m.name, note: m.note ? markdown(m.note) : '', consent: m.consent ? markdown(m.consent) : '' };
     store.set(m.public ? 'last-viewed-public-mapset' : 'last-viewed-private-mapset', m.id);
+    store.set('fm-last-mapset', m.id);
     this.applyFence();
     document.title = `${m.name} · Funderingskaart`;
     this.applyTheme(false);
@@ -751,6 +855,9 @@ export class MapController {
   private writeSelection() {
     const pand = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
     if (pand === this.route.building) return;
+    // The building the address names (or one just searched for) is still on its way to being selected. Until it is, the
+    // address keeps naming it, with its panel: clearing it here lost the panel of a link opened in the 2D view.
+    if (!pand && this.pendingSelect) return;
     // a building link names a mapset; without one the camera in the hash is the link
     this.route = { ...this.route, building: pand, panel: pand ? this.route.panel : null };
     if (this.mapset) writeRoute(this.route, true);
@@ -769,7 +876,15 @@ export class MapController {
   private trySelectPendingFlat() {
     if (!this.flat || !this.pendingSelect) return;
     const b = this.data.index.get(this.pendingSelect);
-    if (b === undefined) return;
+    if (b === undefined) {
+      // Not in our data, or outside this map's area. Once the map has arrived and nothing is loading any more, the
+      // building still opens, on its address alone.
+      if (this.data.loading > 0 || this.map.isMoving()) return;
+      const id = this.pendingSelect;
+      this.pendingSelect = null;
+      this.selectFlat({ id, props: { building_id: `NL.IMBAG.PAND.${id}` } });
+      return;
+    }
     const props = this.data.buildings[b];
     this.pendingSelect = null;
     this.selectFlat({ id: String(props.id), props });
@@ -802,7 +917,7 @@ export class MapController {
 
   setShadows(on: boolean) {
     this.ui.shadows = on;
-    this.layer.shadows = on;
+    if (this.layer) this.layer.shadows = on;
     this.map.triggerRepaint();
   }
 
@@ -827,7 +942,7 @@ export class MapController {
   private applyMode(animate: boolean) {
     document.documentElement.dataset.theme = this.ui.mode;
     restyle(this.map, this.ui.mode);
-    this.layer.setMode(this.ui.mode);
+    this.layer?.setMode(this.ui.mode);
     this.repaintAll(animate);
     this.renderRing();
     this.renderLegend();
@@ -877,15 +992,17 @@ export class MapController {
 
   private renderStatus() {
     const ready = [...this.entries.values()].filter((e) => e.state === 'ready');
-    const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading + (this.walking ? 1 : 0);
+    const loading = [...this.entries.values()].filter((e) => e.state === 'loading').length + this.queue.length + this.data.loading + (this.walking ? 1 : 0) + (this.loading3d ? 1 : 0);
     const panden = ready.reduce((s, e) => s + (e.view?.tile.buildings ?? 0), 0);
     const mb = ready.reduce((s, e) => s + (e.view?.tile.bytes ?? 0), 0) / 1e6;
     let text: string;
     if (this.wantFlat) text = this.map.getZoom() < 13 ? 'Zoom in voor de panden' : 'Panden in 2D';
     else if (this.flat) text = '3D-modellen niet bereikbaar · panden als blokken';
+    // the 3D engine itself is on its way (the first time the 3D view is shown)
+    else if (this.loading3d) text = '3D-panden laden…';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
-    else text = `${nf.format(panden)} panden in 3D${this.layer.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
+    else text = `${nf.format(panden)} panden in 3D${this.layer?.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
     this.ui.status = { text, busy: loading > 0 };
   }
 
@@ -919,6 +1036,8 @@ export class MapController {
     const v = this.valueOf(b, pand);
     const height = heightOf(f, p);
     const rel = p.foundation_type_reliability ? L.RELIABILITY[String(p.foundation_type_reliability)] ?? String(p.foundation_type_reliability) : null;
+    // a guest gets what the public map already says with its colour, and the BAG's own facts: nothing more of ours
+    if (!this.isUser) p = {};
     const facts: [string, string | null][] = [
       ['Bouwjaar', p.construction_year ? String(p.construction_year) : f?.builtYear ? String(f.builtYear) : null],
       ['Hoogte', height !== null ? `${nf1.format(height)} m${f?.storeys ? ` · ${f.storeys} lagen` : ''}` : null],
@@ -931,7 +1050,7 @@ export class MapController {
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
     this.ui.tooltip = {
       x, y,
-      title: b >= 0 ? 'Pand' : 'Pand zonder FunderMaps-gegevens',
+      title: b >= 0 || !this.isUser ? 'Pand' : 'Pand zonder FunderMaps-gegevens',
       more: count > 1 ? `${nf.format(count)} adressen` : count === 1 ? '1 adres' : '',
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       facts: facts.filter((x): x is [string, string] => !!x[1]).slice(0, 6),
@@ -968,9 +1087,12 @@ export class MapController {
       this.ui.info = null;
       return;
     }
+    const v = this.valueOf(b, pandId);
+    // a guest's card: the address, the active layer's value (the colour on the map) and the BAG's own facts. Our data
+    // on the building is for a logged-in user, in the building panel.
+    if (!this.isUser) p = {};
     const rel = (k: string) => (p[k] ? ` · ${L.RELIABILITY[String(p[k])] ?? String(p[k])}` : '');
     const height = heightOf(f, p);
-    const v = this.valueOf(b, pandId);
     const place = this.place;
     const address = place?.street ? `${place.street} ${place.building_number ?? ''}`.trim() : null;
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
@@ -981,7 +1103,7 @@ export class MapController {
       sub: [place?.postal_code ? `${place.postal_code.slice(0, 4)} ${place.postal_code.slice(4)}` : null, count > 1 ? `en ${nf.format(count - 1)} ander${count > 2 ? 'e' : ''} adres${count > 2 ? 'sen' : ''}` : null].filter(Boolean).join(' · '),
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       hasData: b >= 0,
-      stats: [
+      stats: !this.isUser ? [] : [
         ['Bouwjaar', String(p.construction_year ?? f?.builtYear ?? '–')],
         ['Hoogte', height !== null ? `${nf1.format(height)} m` : '–'],
         ['Pandzakking', typeof p.velocity === 'number' ? `${nf1.format(p.velocity)} mm/j` : '–'],
@@ -1017,7 +1139,8 @@ export class MapController {
 
 /** a building from the address (pand number or an old gfm id) → its pand number and where it is (our geocoder) */
 async function locate(id: string, signal?: AbortSignal): Promise<{ pand: string; lon: number; lat: number } | null> {
-  const info = await buildingInfo(/^\d{16}$/.test(id) ? `NL.IMBAG.PAND.${id}` : id, signal);
+  // a pand number, or what the current map put in its links after an address search: the address's own BAG number
+  const info = await buildingInfo(bagId(id) ?? id, signal);
   if (!info?.building_id || typeof info.building_lon !== 'number' || typeof info.building_lat !== 'number') return null;
   return { pand: info.building_id.slice(-16), lon: info.building_lon, lat: info.building_lat };
 }

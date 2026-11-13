@@ -1,7 +1,8 @@
 // One 3D tile after our conversion: how closed each building's mesh is (an edge used by one triangle is a hole) and
 // whether its triangles face one way (KEEP_WINDING=1 shows the file as it comes).
 // Run: bun tools/inspect-closed.ts [tile uri]   (VITE_3D_URL / VITE_3D_ROOT pick the source)
-import { loadTile, makeFrame } from '../src/engine/tiles';
+import { loadTile } from '../src/engine/tiles';
+import { makeFrame } from '../src/engine/frame';
 
 const base = process.env.VITE_3D_URL ?? 'https://api.pdok.nl/kadaster/3d-basisvoorziening/ogc/v1/collections/gebouwen/';
 const rootName = process.env.VITE_3D_ROOT ?? '3dtiles?f=json';

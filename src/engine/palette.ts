@@ -45,6 +45,21 @@ const P2026: Record<string, Record<string, string> | string[]> = {
   incident: ['#D6409F'],
 };
 
+/**
+ * The ownership layer (themes.ts, updateOwners): a colour per owner with a legend row of its own, handed out in this
+ * order, and one quiet colour for every other owner. One set for the light and the dark map and for both palettes.
+ * Which owners are in view changes, so any two of these can end up next to each other. Every pair is therefore far
+ * enough apart, not only neighbours in the list: an OKLab distance (x 100) of at least 8 as seen with protanopia and
+ * with deuteranopia (Machado 2009) and at least 15 with normal vision. Each keeps those distances from the other
+ * colour and from the map's neutral greys too. Lightness (OKLCH) stays between 0.48 and 0.67, which reads on both
+ * maps. The first four are the furthest apart. Twelve fit with very little room to spare: after changing or adding a
+ * colour, check every pair again.
+ */
+export const OWNER_COLORS = ['#169fde', '#af1b13', '#8208cb', '#24b00a', '#bc78ad', '#2b8862', '#af1686', '#a55fff',
+  '#a36a01', '#372aff', '#6267b7', '#f82879'];
+/** a sand tone, lighter than every owner colour: nothing darker stays clear of all twelve and of the greys */
+export const OWNER_OTHER = '#c1ab7f';
+
 /** packed 0xRRGGBB from '#rgb', '#rrggbb', 'rgb()/rgba()', 'hsl()/hsla()'; null for anything else (property names, enum values) */
 export function parseColor(s: unknown): number | null {
   if (typeof s !== 'string') return null;
