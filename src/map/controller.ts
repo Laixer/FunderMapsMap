@@ -767,6 +767,9 @@ export class MapController {
   private writeSelection() {
     const pand = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
     if (pand === this.route.building) return;
+    // The building the address names (or one just searched for) is still on its way to being selected. Until it is, the
+    // address keeps naming it, with its panel: clearing it here lost the panel of a link opened in the 2D view.
+    if (!pand && this.pendingSelect) return;
     // a building link names a mapset; without one the camera in the hash is the link
     this.route = { ...this.route, building: pand, panel: pand ? this.route.panel : null };
     if (this.mapset) writeRoute(this.route, true);
