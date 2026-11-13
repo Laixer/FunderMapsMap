@@ -48,7 +48,8 @@ pnpm build      # type check + production build into dist/
   PDF report. The view is in the address (`…/building/<pand>/<panel>`). Labels and enum texts are frozen from the
   current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest keeps
   the card with what the map itself knows, and the way to log in. The analysis and statistics calls are the billed
-  ones, as today.
+  ones, as today. Under each risk the Funderingsrisico view says "Waarom deze risico-indicatie?": what the letter rests
+  on, as the model recorded it and the analysis sends it (`explanation`), worded in `src/panel/explanation.ts`.
 - **A user's own mapsets:** with a login the organisation's mapsets come from `/api/mapset`; a picker in the panel
   switches between them, and an address without a mapset opens the one looked at last. "Filter op eigendom" keeps only
   the buildings whose owner in our tiles is the user's organisation.

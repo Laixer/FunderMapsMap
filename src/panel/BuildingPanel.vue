@@ -6,6 +6,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import type { UiState } from '@/map/controller';
 import { parseRoute, writeRoute } from '@/map/route';
 import { addressLabel, documentLink, loadPanel, pdfReport, save, type PanelData } from './data';
+import { explanationOf } from './explanation';
 import { NO_DATA, RECOVERY_SAMPLE_FIELDS, SAMPLE_GROUPS, enumLabel, raw, rows, show, type Row } from './fields';
 import StatisticsDialog from './StatisticsDialog.vue';
 
@@ -95,9 +96,12 @@ const RISKS = [
   { title: 'Bacteriële aantasting', risk: 'bioInfectionRisk', more: ['bioInfectionReliability'] },
   { title: 'Op basis van onderzoek', risk: 'unclassifiedRisk', more: [] },
 ];
+// why each letter is what it is: the model's own record, worded (FunderMapsStudio #87)
+const explanation = computed(() => explanationOf(a.value));
 const riskGroups = computed(() => RISKS.map((g) => {
   const letter = raw(a.value, g.risk);
-  return { title: g.title, letter: typeof letter === 'string' ? letter : null, risk: rows('analysis', a.value, [g.risk])[0], more: rows('analysis', a.value, g.more) };
+  return { title: g.title, letter: typeof letter === 'string' ? letter : null, risk: rows('analysis', a.value, [g.risk])[0], more: rows('analysis', a.value, g.more),
+    why: explanation.value?.why[g.risk as keyof NonNullable<typeof explanation.value>['why']] ?? null };
 }));
 
 // ---- onderzoek / herstel / incidenten ----
@@ -241,10 +245,12 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
 
       <template v-else-if="view === 'foundation-risk'">
         <h3 tabindex="-1">Funderingsrisico</h3>
+        <p v-if="explanation?.gate" class="gate">{{ explanation.gate }}</p>
         <section v-for="g in riskGroups" :key="g.title" class="risk">
           <p class="section">{{ g.title }}</p>
           <div class="letter-row"><span class="letter" :class="g.letter ? `r-${g.letter}` : 'r-none'">{{ g.letter ? g.letter.toUpperCase() : '–' }}</span><div><small>{{ g.risk.label }}</small><strong :class="{ none: g.risk.empty }">{{ g.risk.value }}</strong></div></div>
           <dl v-if="g.more.length" class="wide"><template v-for="r in g.more" :key="r.field"><dt>{{ r.label }}</dt><dd :class="{ none: r.empty }">{{ r.value }}</dd></template></dl>
+          <p v-if="g.why" class="why"><b>Waarom deze risico-indicatie?</b> {{ g.why }}</p>
         </section>
       </template>
 
@@ -357,6 +363,9 @@ nav { display: grid; gap: 4px; }
 .pager { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--ink-2); }
 .pager .icon { font-size: 20px; }
 .pager .icon:disabled { opacity: .35; cursor: default; }
+.why { margin: 8px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.why b { display: block; font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.gate { margin: 8px 0 0; padding: 9px 11px; border-radius: 10px; background: var(--raise); font-size: 13px; color: var(--ink-2); }
 .note { font-size: 13px; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
 .text { border: 0; background: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; justify-self: start; }
 .primary, .secondary { border-radius: 10px; padding: 9px 14px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
