@@ -23,4 +23,6 @@ export const BGT = (env.VITE_BGT_URL ?? 'https://api.pdok.nl/lv/bgt/ogc/v1').rep
  * name the login pages forward to the same page here.
  */
 export const LOGIN_HOST = (env.VITE_LOGIN_HOST ?? 'https://maps.fundermaps.com').replace(/\/$/, '');
+/** where a user's questions go when their organisation has no account holder */
+export const CONTACT_EMAIL = env.VITE_CONTACT_EMAIL ?? 'info@fundermaps.com';
 export const COMMIT = env.VITE_GIT_COMMIT_HASH ?? 'dev';

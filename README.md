@@ -38,6 +38,10 @@ pnpm build      # type check + production build into dist/
   `/login`, `/forgot-password`, `/reset-password`, `/account` (passkeys, sign-out), plus the profile and password
   dialogs behind the user menu (`src/pages/AuthPages.vue`, `src/api/auth.ts`). The cookie belongs to the login host's
   site, so on any other host name the map stays a guest's map and the login pages forward to `VITE_LOGIN_HOST`.
+- **Contact:** the user menu ends with "Uw contactpersoon": the account holder of the user's organisation (set per
+  organisation in the Studio's Beheer, sent with `/api/user/me`), with a mail and a phone link; without one, the general
+  address (`VITE_CONTACT_EMAIL`). The map has no "organisation you are working in": someone in several organisations
+  with different account holders sees each, with the organisation it is for (`src/api/contacts.ts`).
 - **Building panel** (`src/panel/`): for a logged-in user, everything the current map app shows for a building, from
   the API's customer part: key facts, Pand, Locatie, Fundering, Funderingsrisico, Onderzoek and Herstel (with their
   samples and documents), Incidenten, the statistics of the neighbourhood (Chart.js, loaded with the dialog) and the
@@ -80,6 +84,7 @@ No private data lives in this repository or the bundle.
 | `VITE_BASEMAP_STYLE` | `<tileserver>/style/fundermaps-basemap` |
 | `VITE_API_URL` | `https://api.fundermaps.com` |
 | `VITE_LOGIN_HOST` | `https://maps.fundermaps.com` |
+| `VITE_CONTACT_EMAIL` | `info@fundermaps.com` |
 | `VITE_PDOK_LOCATIONSERVICE` | `https://api.pdok.nl/bzk/locatieserver/search/v3_1` |
 | `VITE_3D_URL` | `https://api.pdok.nl/kadaster/3d-basisvoorziening/ogc/v1/collections/gebouwen/` |
 | `VITE_3D_ROOT` | `3dtiles?f=json` (3D BAG: `tileset.json`) |
