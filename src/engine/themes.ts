@@ -128,6 +128,13 @@ export function setLegends(layers: { id: string; name: string; fields: { name: s
 const OWNER = 'owner';
 const OTHER_OWNERS = 'Overig corporatiebezit';
 /**
+ * Not an owner by name: in a few municipalities the data says "Particulier" for a privately owned building (83,687
+ * buildings on 2026-11-13, the largest single value where it occurs). The layer shows whose property a building is, so
+ * these are left out of it like a building without an owner, instead of filling the map and the first legend row.
+ * A mixed value ("Particulier/<corporation>") names a corporation and stays.
+ */
+const PRIVATE = 'Particulier';
+/**
  * owner → its place in OWNER_COLORS, for as long as the page lives, so an owner keeps its colour while the map moves.
  * In order of last use: when a new owner needs a colour and none is free, the owner longest out of the legend gives up
  * theirs.
@@ -145,7 +152,7 @@ export function updateOwners(buildings: Props[]): boolean {
   const counts = new Map<string, number>();
   for (const b of buildings) {
     const name = b.owner;
-    if (typeof name === 'string' && name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    if (typeof name === 'string' && name && name !== PRIVATE) counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   const ranked = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, OWNER_COLORS.length).map(([name]) => name);
   const top = new Set(ranked);
@@ -169,7 +176,7 @@ export function updateOwners(buildings: Props[]): boolean {
   const rows = JSON.stringify(fields);
   if (rows === ownerRows) return false;
   ownerRows = rows;
-  const hasOwner = ['all', ['has', OWNER], ['!=', ['get', OWNER], '']];
+  const hasOwner = ['all', ['has', OWNER], ['!=', ['get', OWNER], ''], ['!=', ['get', OWNER], PRIVATE]];
   dynamic.set(OWNER, {
     rule: {
       filter: hasOwner, sourceFilter: hasOwner, source: 'buildings',

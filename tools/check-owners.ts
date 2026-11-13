@@ -127,5 +127,12 @@ check('the same rule in both palettes', JSON.stringify(layerStyle('owner', 'curr
 const empty = legend([]);
 check('no buildings: no rows, and still a valid rule', empty.rows.length === 0 && typeof layerStyle('owner', '2026').color === 'string');
 
+// ---- "Particulier" is not an owner by name: out of the layer, like a building without one ----
+{
+  const l = legend(view({ Particulier: 50, 'Corporatie A': 3, 'Particulier/Corporatie B': 2, '': 4 }));
+  check('"Particulier" has no legend row and is not drawn', !l.rows.some((r) => r.name === 'Particulier') && l.none === 54, `none ${l.none}`);
+  check('…a mixed value that names a corporation stays', l.rows.some((r) => r.name === 'Particulier/Corporatie B' && r.count === 2) && l.rows[0].name === 'Corporatie A');
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
 process.exit(failed ? 1 : 0);
