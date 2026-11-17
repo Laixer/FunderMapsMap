@@ -341,6 +341,9 @@ export class MapController {
     });
     this.map.on('moveend', () => this.onMoveEnd());
     this.map.on('mousemove', (e) => {
+      // A guest on a public map gets no information per building, as on the map before this one: the colours and the
+      // legend are what is public. So no hover card, no hover mark and no pointer that says "click me".
+      if (!this.isUser) return;
       if (this.hoverFrame) return;
       this.hoverFrame = requestAnimationFrame(() => {
         this.hoverFrame = 0;
@@ -361,6 +364,8 @@ export class MapController {
     this.map.on('mouseout', () => { this.setHover(null); this.renderTooltip(null, 0, 0); });
     this.map.on('movestart', () => this.renderTooltip(null, 0, 0));
     this.map.on('click', (e) => {
+      // a guest's click opens nothing; it only takes away the mark of a building the search or a link pointed at
+      if (!this.isUser) return this.select(null);
       if (!this.flat) return this.select(this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null);
       const p = this.flatAt(e.point.x, e.point.y);
       this.selectFlat(p ? { id: String(p.building_id).slice(-16), props: p } : null);
@@ -1036,8 +1041,6 @@ export class MapController {
     const v = this.valueOf(b, pand);
     const height = heightOf(f, p);
     const rel = p.foundation_type_reliability ? L.RELIABILITY[String(p.foundation_type_reliability)] ?? String(p.foundation_type_reliability) : null;
-    // a guest gets what the public map already says with its colour, and the BAG's own facts: nothing more of ours
-    if (!this.isUser) p = {};
     const facts: [string, string | null][] = [
       ['Bouwjaar', p.construction_year ? String(p.construction_year) : f?.builtYear ? String(f.builtYear) : null],
       ['Hoogte', height !== null ? `${nf1.format(height)} m${f?.storeys ? ` · ${f.storeys} lagen` : ''}` : null],
@@ -1050,7 +1053,7 @@ export class MapController {
     const count = typeof p.address_count === 'number' ? p.address_count : 0;
     this.ui.tooltip = {
       x, y,
-      title: b >= 0 || !this.isUser ? 'Pand' : 'Pand zonder FunderMaps-gegevens',
+      title: b >= 0 ? 'Pand' : 'Pand zonder FunderMaps-gegevens',
       more: count > 1 ? `${nf.format(count)} adressen` : count === 1 ? '1 adres' : '',
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       facts: facts.filter((x): x is [string, string] => !!x[1]).slice(0, 6),
@@ -1059,6 +1062,8 @@ export class MapController {
 
   /** address, buurt, wijk and gemeente of the selected pand (our public geocoder) */
   private loadPlace() {
+    // a guest gets no card (see renderInfo), so there is nothing to look the address up for
+    if (!this.isUser) return;
     const id = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
     if (id === this.infoFor) return;
     this.infoFor = id;
@@ -1074,6 +1079,9 @@ export class MapController {
   }
 
   private renderInfo() {
+    // What we know of a building is for a logged-in user, in the building panel. A guest on a public map gets no card
+    // of a building, as on the map before this one; a building the search or a link points at is only marked.
+    if (!this.isUser) { this.ui.info = null; return; }
     let f: TileFeature | null = null, b = -1, p: Props = {}, pandId: string;
     if (this.selected) {
       f = this.selected.view.tile.features[this.selected.feature];
@@ -1088,9 +1096,6 @@ export class MapController {
       return;
     }
     const v = this.valueOf(b, pandId);
-    // a guest's card: the address, the active layer's value (the colour on the map) and the BAG's own facts. Our data
-    // on the building is for a logged-in user, in the building panel.
-    if (!this.isUser) p = {};
     const rel = (k: string) => (p[k] ? ` · ${L.RELIABILITY[String(p[k])] ?? String(p[k])}` : '');
     const height = heightOf(f, p);
     const place = this.place;
@@ -1103,7 +1108,7 @@ export class MapController {
       sub: [place?.postal_code ? `${place.postal_code.slice(0, 4)} ${place.postal_code.slice(4)}` : null, count > 1 ? `en ${nf.format(count - 1)} ander${count > 2 ? 'e' : ''} adres${count > 2 ? 'sen' : ''}` : null].filter(Boolean).join(' · '),
       swatch: toHex(v.color), valueTitle: v.title, valueLabel: v.label,
       hasData: b >= 0,
-      stats: !this.isUser ? [] : [
+      stats: [
         ['Bouwjaar', String(p.construction_year ?? f?.builtYear ?? '–')],
         ['Hoogte', height !== null ? `${nf1.format(height)} m` : '–'],
         ['Pandzakking', typeof p.velocity === 'number' ? `${nf1.format(p.velocity)} mm/j` : '–'],
