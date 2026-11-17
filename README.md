@@ -41,9 +41,10 @@ pnpm build      # type check + production build into dist/
 - **Who sees what:** every view is a mapset's view, as on the current map; without a mapset there is no data on the
   map. A guest gets public mapsets only: the one in the address, else the public one looked at last, else the login
   page. A user gets the mapset in the address, else the one looked at last, else their first; an unknown or foreign
-  one falls back to their own, with a note; without any mapset they are told so (`components/NoMapsets.vue`). Of a
-  building a guest sees the address, the active layer's value (what the colour already says) and the BAG's own
-  facts: nothing else of our data, not on the page and not in its state. The view with every layer of the country
+  one falls back to their own, with a note; without any mapset they are told so (`components/NoMapsets.vue`). A
+  guest gets nothing per building, as on the map before this one: no card, no hover card, and a click opens nothing;
+  the colours and the legend are what is public. A building the search or a link points at is only marked. Nothing of
+  our data on a building is on the page or in its state. The view with every layer of the country
   exists only for work on the layers (`pnpm dev`, or a build with `VITE_ALL_LAYERS=1`).
 - **Login:** the session is the API's cookie (Better Auth), nothing of it is kept here. `src/api/session.ts` asks
   `/api/user/me` once; without a session the visitor is a guest. The login pages are the current map app's:
@@ -58,8 +59,8 @@ pnpm build      # type check + production build into dist/
   the API's customer part: key facts, Pand, Locatie, Fundering, Funderingsrisico, Onderzoek and Herstel (with their
   samples and documents), Incidenten, the statistics of the neighbourhood (Chart.js, loaded with the dialog) and the
   PDF report. The view is in the address (`…/building/<pand>/<panel>`). Labels and enum texts are frozen from the
-  current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest keeps
-  a card with the address and the way to log in (see "Who sees what"). The analysis and statistics calls are the billed
+  current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest gets
+  no panel and no card (see "Who sees what"). The analysis and statistics calls are the billed
   ones, as today. Under each risk the Funderingsrisico view says "Waarom deze risico-indicatie?": what the letter rests
   on, as the model recorded it and the analysis sends it (`explanation`), worded in `src/panel/explanation.ts`.
 - **A user's own mapsets:** with a login the organisation's mapsets come from `/api/mapset`; a picker in the panel
@@ -81,8 +82,8 @@ pnpm build      # type check + production build into dist/
   A "Bomen" switch turns them off. Nothing is done with them yet beyond showing them.
 - **Look:** dark unless the visitor chose light. Shadows, the surroundings and the 2026 colours are simply on. The page
   itself never scrolls (it is clipped): panels and the login pages scroll inside themselves.
-- **Phone:** below 640 px the layer panel folds (and folds again when a building opens), the building's panel and
-  card are sheets from the bottom, lists stack, touch targets are 40 px.
+- **Phone:** below 640 px the layer panel folds (and folds again when a building opens), the building's panel is a
+  sheet from the bottom, lists stack, touch targets are 40 px.
 - **Keyboard:** the building panel takes the focus when it opens, each view moves it to its heading, Escape goes back
   a view and then closes the panel; dialogs are native `<dialog>`s.
 - **Search:** a BAG number (pand, address or verblijfsobject, with or without `NL.IMBAG.…`) or an old gfm id opens
