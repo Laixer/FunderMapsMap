@@ -49,7 +49,17 @@ export interface LoadedTile {
   buildings: number;
   parts: TilePart[];
   bytes: number;
+  /**
+   * The tile's model cannot be used (then `parts` is empty): its positions are spread over an absurd range. Seen in
+   * PDOK 3D Basisvoorziening: a tile holding a no-data height (−2,147,483.647 m) has its int16 positions stretched over
+   * some 2,000 km, so every vertex snaps to a lattice of about 33 m and the buildings come out as shards. The features
+   * (pand numbers and their facts) are still right; the map draws these buildings as blocks.
+   */
+  broken: boolean;
 }
+
+/** no building is this high (m): a tile reaching beyond it has stretched positions */
+const MAX_HEIGHT = 3000;
 
 export function transferables(tile: LoadedTile): ArrayBuffer[] {
   return tile.parts.flatMap((p) => [p.position, p.normal, p.feature, p.index, p.featureBoxes, p.featureTriStart, p.featureTris, p.edgePosition, p.edgeFeature]
@@ -164,7 +174,8 @@ export async function loadTile(url: string, frame: Frame, signal?: AbortSignal, 
 
   const parts = meshes.map((mesh) => buildPart(mesh, frame, count, transform));
   for (const mesh of meshes) mesh.geometry.dispose();
-  return { features, buildings: new Set(features.map((f) => f.id)).size, parts, bytes: buffer.byteLength };
+  const broken = parts.some((p) => !(p.bounds[5] - p.bounds[2] < MAX_HEIGHT));
+  return { features, buildings: new Set(features.map((f) => f.id)).size, parts: broken ? [] : parts, bytes: buffer.byteLength, broken };
 }
 
 /** an exact key per source vertex position: the quantized int16 triple when there is one, else the float text */
