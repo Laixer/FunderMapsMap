@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Left panel: brand, address search, subject tabs, layer list, legend with counts, and the display switches.
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { MapController, UiState } from '@/map/controller';
 import SearchBox from './SearchBox.vue';
 import UserMenu from './UserMenu.vue';
@@ -10,6 +10,13 @@ const props = defineProps<{ ui: UiState; ctl: MapController }>();
 const collapsed = ref(matchMedia('(max-width: 640px)').matches);
 const toggle = () => { collapsed.value = !collapsed.value; };
 const dialog = ref<'profile' | 'password' | null>(null);
+// The mapsets under "Kaart": one with a short name is a tab, three to a row; one whose name does not fit a tab (a
+// candidate model, "Kandidaat funderingstype 2026.2") is in a select under them. A long name as a tab took most of a
+// row and left the others ragged.
+const TAB_NAME = 14;
+const tabs = computed(() => props.ui.mapsets.filter((m) => m.name.length <= TAB_NAME));
+const more = computed(() => props.ui.mapsets.filter((m) => m.name.length > TAB_NAME));
+const openInMore = computed(() => more.value.find((m) => m.id === props.ui.mapset?.id)?.slug ?? '');
 // on a phone the building's panel needs the room: the layer panel folds when a building opens
 watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640px)').matches) collapsed.value = true; });
 </script>
@@ -39,9 +46,14 @@ watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640
       <!-- the mapsets as tabs, always in sight: one click goes from one to the other and back, without a new page -->
       <div v-if="ui.mapsets.length > 1" class="picker">
         <span id="maps-label" class="cap">Kaart</span>
-        <div class="maps" role="tablist" aria-labelledby="maps-label">
-          <button v-for="m in ui.mapsets" :key="m.id" role="tab" :aria-selected="m.id === ui.mapset?.id" @click="ctl.openMapset(m.slug)">{{ m.name }}</button>
+        <div v-if="tabs.length" class="maps" role="tablist" aria-labelledby="maps-label" :style="{ gridTemplateColumns: `repeat(${Math.min(3, tabs.length)}, 1fr)` }">
+          <button v-for="m in tabs" :key="m.id" role="tab" :aria-selected="m.id === ui.mapset?.id" @click="ctl.openMapset(m.slug)">{{ m.name }}</button>
         </div>
+        <select v-if="more.length" class="more" :class="{ on: !!openInMore }" :aria-label="tabs.length ? 'Meer kaarten' : 'Kaart'" :value="openInMore"
+          @change="ctl.openMapset(($event.target as HTMLSelectElement).value)">
+          <option v-if="!openInMore" value="" disabled>{{ tabs.length ? 'Meer kaarten…' : 'Kies een kaart' }}</option>
+          <option v-for="m in more" :key="m.id" :value="m.slug">{{ m.name }}</option>
+        </select>
       </div>
       <details v-if="ui.mapset?.note" class="about">
         <summary>Over deze kaart</summary>
@@ -138,12 +150,15 @@ button.row:hover { background: var(--raise); }
 .switch.off { opacity: .5; cursor: default; }
 .picker { display: grid; gap: 4px; margin: 2px 0 10px; }
 .picker .cap { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-/* tabs that size to their names and wrap: a mapset's name can be long, and there can be a handful */
-.maps { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); }
-.maps button { flex: 1 1 auto; min-height: 30px; border: 0; padding: 6px 10px; border-radius: 9px; background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
+/* tabs of one width, three to a row; a name that would not fit one is in the select under them */
+.maps { display: grid; gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); }
+.maps button { min-width: 0; min-height: 30px; border: 0; padding: 6px 4px; border-radius: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
 /* the open mapset is marked as the active layer is: in the dark look a raised tab alone hardly differs from the rest */
 .maps button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 650; box-shadow: inset 0 0 0 1px var(--accent-soft); }
 .maps button:not([aria-selected="true"]):hover { background: var(--raise); color: var(--ink); }
+.more { font: inherit; font-size: 12.5px; font-weight: 550; color: var(--ink-2); padding: 7px 10px; min-height: 32px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-strong); cursor: pointer; }
+/* the open mapset is the one in the select: marked as an open tab is */
+.more.on { color: var(--accent); font-weight: 650; border-color: var(--accent); }
 .notice { margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--raise); font-size: 12.5px; color: var(--ink-2); }
 .about { margin: 0 0 10px; border-radius: 10px; background: var(--raise); padding: 7px 10px; font-size: 13px; }
 .about summary { cursor: pointer; font-weight: 600; color: var(--ink-2); }
@@ -158,7 +173,7 @@ button.row:hover { background: var(--raise); }
   /* the layers sit over the map here: nothing of it shows through */
   .panel:not(.collapsed) { background: var(--solid); }
   .layer { padding: 10px; }
-  .maps button { min-height: 40px; }
+  .maps button, .more { min-height: 40px; }
   .switches { grid-template-columns: 1fr; gap: 12px; }
 }
 </style>
