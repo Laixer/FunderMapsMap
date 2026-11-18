@@ -129,6 +129,8 @@ interface TileEntry {
   view?: TileView;
   /** building index (BuildingData.buildings) per feature, -1 = no FunderMaps data (yet) */
   featureBuilding?: Int32Array;
+  /** the pand numbers of a tile whose 3D model cannot be used (LoadedTile.broken): drawn as blocks, it has no view */
+  blocks?: string[];
 }
 type Hit = { view: TileView; feature: number };
 
@@ -209,6 +211,8 @@ export class MapController {
   private wantFlat = false;
   private flatLayers: string[] = [];
   private flatSelected: { id: string; props: Props } | null = null;
+  /** in the 3D view: the buildings of the loaded tiles without a usable 3D model, drawn as blocks (renderFlat) */
+  private blockIds = new Set<string>();
 
   /**
    * Start the map on the basemap already restyled, so the original basemap never shows while it loads. A mapset and a
@@ -358,6 +362,15 @@ export class MapController {
         }
         const hit = this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null;
         this.setHover(hit);
+        // a building drawn as a block (its 3D model is unusable) is found the way the flat map finds one
+        const block = !hit && this.blockIds.size ? this.flatAt(e.point.x, e.point.y) : null;
+        if (block) {
+          this.map.getCanvas().style.cursor = 'pointer';
+          const id = String(block.building_id).slice(-16);
+          const b = this.data.index.get(id) ?? -1;
+          this.tooltipFor(b, b >= 0 ? this.data.buildings[b] : this.data.outside.has(id) ? {} : block, null, e.point.x, e.point.y, id);
+          return;
+        }
         this.renderTooltip(hit, e.point.x, e.point.y);
       });
     });
@@ -366,7 +379,12 @@ export class MapController {
     this.map.on('click', (e) => {
       // a guest's click opens nothing; it only takes away the mark of a building the search or a link pointed at
       if (!this.isUser) return this.select(null);
-      if (!this.flat) return this.select(this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null);
+      if (!this.flat) {
+        const hit = this.layer?.pick(e.point.x, e.point.y, this.visible) ?? null;
+        const block = !hit && this.blockIds.size ? this.flatAt(e.point.x, e.point.y) : null;
+        if (block) return this.selectFlat({ id: String(block.building_id).slice(-16), props: block });
+        return this.select(hit);
+      }
       const p = this.flatAt(e.point.x, e.point.y);
       this.selectFlat(p ? { id: String(p.building_id).slice(-16), props: p } : null);
     });
@@ -402,6 +420,7 @@ export class MapController {
     for (const e of this.entries.values()) if (e.view) this.layer?.removeTile(e.view);
     this.entries.clear();
     this.entryOfView.clear();
+    this.syncBlocks();
     this.frame = makeFrame(lon, lat);
     // a map that has not shown 3D yet has no scene to start over: its layer is made around the new origin when it comes
     if (!this.engine || !this.layer) return;
@@ -520,14 +539,27 @@ export class MapController {
     if (this.entries.size <= room) return;
     const c = this.map.getCenter();
     const spare = [...this.entries.values()]
-      .filter((e) => e.state === 'ready' && !wanted.has(e.uri) && e.view !== this.selected?.view)
+      .filter((e) => e.state === 'ready' && !wanted.has(e.uri) && (!e.view || e.view !== this.selected?.view))
       .sort((a, b) => distanceTo(b.bounds, c) - distanceTo(a.bounds, c));
     for (const e of spare.slice(0, this.entries.size - room)) {
-      if (e.view === this.hovered?.view) this.setHover(null);
-      this.layer?.removeTile(e.view!);
-      this.entryOfView.delete(e.view!);
+      // a tile drawn as blocks has no view
+      if (e.view) {
+        if (e.view === this.hovered?.view) this.setHover(null);
+        this.layer?.removeTile(e.view);
+        this.entryOfView.delete(e.view);
+      }
       this.entries.delete(e.uri);
     }
+    this.syncBlocks();
+  }
+
+  /** the buildings of the loaded tiles without a usable 3D model; the blocks are drawn again when the set changed */
+  private syncBlocks() {
+    const ids = new Set<string>();
+    if (!this.flat) for (const e of this.entries.values()) for (const id of e.blocks ?? []) ids.add(id);
+    if (ids.size === this.blockIds.size && [...ids].every((id) => this.blockIds.has(id))) return;
+    this.blockIds = ids;
+    this.renderFlat();
   }
 
   private pump() {
@@ -547,6 +579,13 @@ export class MapController {
         .then((tile) => {
           if (this.entries.get(uri) !== entry || layer !== this.layer || !layer) return;
           entry.state = 'ready';
+          if (tile.broken) {
+            // nothing of this tile's model can be drawn: its buildings become blocks on our own tiles
+            entry.blocks = [...new Set(tile.features.map((f) => f.id))];
+            this.syncBlocks();
+            this.trySelectPendingFlat();
+            return;
+          }
           entry.view = layer.addTile(tile, new Uint8Array(tile.features.length * 4));
           this.entryOfView.set(entry.view, entry);
           this.linkFeatures(entry);
@@ -659,7 +698,10 @@ export class MapController {
     if (on) this.select(null);
     else this.selectFlat(null);
     if (this.layer) this.map.setLayoutProperty(this.layer.id, 'visibility', on ? 'none' : 'visible');
+    // the flat map draws every building itself; back in 3D the tiles without a usable model are found again
+    this.blockIds = new Set();
     this.renderFlat();
+    this.syncBlocks();
     this.renderStatus();
   }
 
@@ -691,15 +733,22 @@ export class MapController {
     if (!this.map.getSource('fm')) return;
     for (const id of this.flatLayers) if (this.map.getLayer(id)) this.map.removeLayer(id);
     this.flatLayers = [];
-    if (!this.flat) return;
+    // In the 3D view only the buildings without a usable 3D model are drawn here, as blocks between the models.
+    const some = !this.flat && this.blockIds.size > 0;
+    if (!this.flat && !some) return;
+    const only = some ? ['in', ['get', 'building_id'], ['literal', [...this.blockIds].map((id) => `NL.IMBAG.PAND.${id}`)]] : null;
+    const within = (filter: unknown) => (only ? (filter && filter !== true ? ['all', filter, only] : only) : filter);
     // By choice ("3D-panden" off) the buildings are flat shapes on the ground, a plain 2D map. Only when the 3D models
     // cannot be reached do they stand up as blocks, so the map still reads as the 3D one.
-    const planes = this.wantFlat;
+    const planes = this.flat && this.wantFlat;
     const paint = (color: unknown, lift: number) => (planes
       ? { 'fill-color': color, 'fill-opacity': 0.92 }
       : { 'fill-extrusion-color': color, 'fill-extrusion-height': ['+', ['coalesce', ['get', 'height'], 8], lift], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.92 }) as any;
     // one of two layer types: the style spec's types cannot say "either"
     const type: any = planes ? 'fill' : 'fill-extrusion';
+    // A layer's name says its type. MapLibre keeps a layer's tile data by its name: a block added under the name a flat
+    // shape had a moment ago is drawn with that shape's data for a frame or two, and that draw throws.
+    const name = (rule: string) => `${planes ? 'fm-flat' : 'fm-block'}-${rule}`;
     // "Omgeving": every building no layer of the theme draws, in the neutral grey of the 3D view (never under a
     // coloured block, so the two never fight over the same walls). Layers on other sources (facade scan, incidents) are
     // drawn on their own tiles, so the grey cannot exclude their buildings: there the coloured blocks sit just above it.
@@ -710,17 +759,22 @@ export class MapController {
       return { rule, ...style, filter };
     });
     const filters = styles.filter((s) => s.source === 'buildings').map((s) => s.filter ?? true);
-    if (this.ui.context && !filters.includes(true)) {
+    // between the 3D models a building no layer draws stands there in grey, as its neighbours do
+    if ((this.ui.context || some) && !filters.includes(true)) {
+      const rest = within(filters.length ? ['!', ['any', ...filters]] : null);
       this.map.addLayer({
-        id: 'fm-flat-context', type, source: 'fm', 'source-layer': 'buildings', minzoom: 13,
-        ...(filters.length ? { filter: ['!', ['any', ...filters]] as any } : {}),
+        id: name('context'), type, source: 'fm', 'source-layer': 'buildings', minzoom: 13,
+        ...(rest ? { filter: rest as any } : {}),
         paint: paint(toHex(NEUTRAL[this.ui.mode].noData), 0),
       }, 'fm-flat-selected');
-      this.flatLayers.push('fm-flat-context');
+      this.flatLayers.push(name('context'));
     }
-    for (const { rule, filter, color, source } of [...styles].reverse()) {
-      const id = `fm-flat-${rule}`;
+    for (const { rule, filter: plain, color, source } of [...styles].reverse()) {
+      const id = name(rule);
       const own = source !== 'buildings';
+      // the layers on other tiles (facade scan, incidents) carry no pand number to pick the blocks by: 3D view, not drawn
+      if (some && own) continue;
+      const filter = within(plain);
       this.map.addLayer({
         id, type, source: this.sourceFor(source), 'source-layer': source, minzoom: 13,
         ...(filter ? { filter: filter as any } : {}),
@@ -762,6 +816,11 @@ export class MapController {
 
   select(hit: Hit | null) {
     if (!hit && this.flatSelected) return this.selectFlat(null);
+    if (hit && this.flatSelected) {
+      // from a block to a 3D model: the block's outline goes
+      this.flatSelected = null;
+      if (this.map.getLayer('fm-flat-selected')) this.map.setFilter('fm-flat-selected', ['==', ['get', 'building_id'], '']);
+    }
     this.selected = hit;
     this.layer?.setSelected(hit?.view ?? null, hit?.feature ?? -1);
     this.renderRing();
@@ -843,7 +902,7 @@ export class MapController {
     const expressions = [this.mapset ? fenceExpression(this.mapset.fence) : null, owner ? ['==', ['get', 'owner'], owner] : null].filter(Boolean) as unknown[][];
     this.fence = expressions.length > 1 ? ['all', ...expressions] : expressions[0] ?? null;
     this.data.setFence(fence || owner ? (p) => (!fence || fence(p)) && (!owner || p.owner === owner) : null);
-    if (this.flat) this.renderFlat();
+    if (this.flat || this.blockIds.size) this.renderFlat();
   }
 
   setOwnerOnly(on: boolean) {
@@ -879,7 +938,9 @@ export class MapController {
 
   /** flat mode: select the building from the address or a search once its data is there */
   private trySelectPendingFlat() {
-    if (!this.flat || !this.pendingSelect) return;
+    if (!this.pendingSelect) return;
+    // in the 3D view only a building that is drawn as a block is selected this way; the others wait for their model
+    if (!this.flat && !this.blockIds.has(this.pendingSelect)) return;
     const b = this.data.index.get(this.pendingSelect);
     if (b === undefined) {
       // Not in our data, or outside this map's area. Once the map has arrived and nothing is loading any more, the
@@ -1007,7 +1068,7 @@ export class MapController {
     else if (this.loading3d) text = '3D-panden laden…';
     else if (this.map.getZoom() < MIN_ZOOM_3D) text = 'Zoom in om de panden in 3D te laden';
     else if (loading) text = `3D-panden laden… ${nf.format(panden)} in beeld`;
-    else text = `${nf.format(panden)} panden in 3D${this.layer?.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
+    else text = `${nf.format(panden)} panden in 3D${this.blockIds.size ? ` · ${nf.format(this.blockIds.size)} als blok` : ''}${this.layer?.treeCount ? ` · ${nf.format(this.layer.treeCount)} bomen` : ''} · ${ready.length} tegels · ${nf1.format(mb)} MB`;
     this.ui.status = { text, busy: loading > 0 };
   }
 
