@@ -263,11 +263,13 @@ export class MapController {
     const all = m && !own.some((x) => x.id === m.id) ? [m, ...own] : own;
     ui.mapsets = all.map((x) => ({ id: x.id, slug: x.slug, name: x.name }));
     ui.owner = user?.organizations[0]?.name ?? null;
-    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user, software, flat);
+    return new MapController(container, ui, s, m ? { ...route, mapset: m.slug } : route, m, t, p, !!user, software, flat, all);
   }
 
   private constructor(container: HTMLElement, private ui: UiState, style: any, route: Route, mapset: Mapset | null,
-    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean, software: boolean, flat: boolean) {
+    target: { pand: string; lon: number; lat: number } | null, saved: Position | null, private isUser: boolean, software: boolean, flat: boolean,
+    /** the mapsets this visitor can switch between: a user's own, and the one a link opened */
+    private mapsets: Mapset[] = []) {
     this.software = software;
     this.wantFlat = flat;
     ui.flat = flat;
@@ -910,9 +912,21 @@ export class MapController {
     this.applyFence();
   }
 
-  /** another mapset: a fresh page on its address, so nothing of the previous one lingers */
+  /**
+   * Another of the visitor's mapsets, in place: the map, the view and the buildings' data stay; the layers, the legend
+   * and the boundary become the other mapset's. (It used to load the page again, which showed an empty map for a
+   * while and lost the eye's place: two mapsets could not be compared.) Back returns to the previous one.
+   */
   openMapset(slug: string) {
-    location.assign(`/map/${encodeURIComponent(slug)}`);
+    const m = this.mapsets.find((x) => x.slug === slug || x.id === slug);
+    // not one we hold: its own page decides whether it opens
+    if (!m) { location.assign(`/map/${encodeURIComponent(slug)}`); return; }
+    if (m.id === this.mapset?.id) return;
+    this.ui.notice = '';
+    this.setMapset(m);
+    this.route = { ...this.route, mapset: m.slug };
+    writeRoute(this.route, true);
+    this.renderStatus();
   }
 
   /** the selected building into the address (a new history entry, so Back closes it) */
@@ -929,6 +943,14 @@ export class MapController {
 
   /** Back or Forward: open or close the building the address names */
   private followRoute(r: Route) {
+    // across a change of mapset: the same switch in place, or that mapset's own page when it is not one we hold
+    if (r.mapset && this.mapset && r.mapset !== this.mapset.slug && r.mapset !== this.mapset.id) {
+      const m = this.mapsets.find((x) => x.slug === r.mapset || x.id === r.mapset);
+      if (!m) { location.reload(); return; }
+      this.setMapset(m);
+      this.route = { ...this.route, mapset: m.slug };
+      this.renderStatus();
+    }
     this.route = { ...this.route, building: r.building, panel: r.panel };
     const current = this.selected ? this.selected.view.tile.features[this.selected.feature].id : this.flatSelected?.id ?? null;
     if (r.building === current) return;
