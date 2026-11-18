@@ -36,12 +36,13 @@ watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640
     <SearchBox :ctl="ctl" />
     <div v-show="!collapsed" class="body">
       <p v-if="ui.notice" class="notice" role="status">{{ ui.notice }}</p>
-      <label v-if="ui.mapsets.length > 1" class="picker">Kaart
-        <select :value="ui.mapsets.find((m) => m.id === ui.mapset?.id)?.slug ?? ''" @change="ctl.openMapset(($event.target as HTMLSelectElement).value)">
-          <option v-if="!ui.mapset" value="" disabled>Kies een kaart</option>
-          <option v-for="m in ui.mapsets" :key="m.id" :value="m.slug">{{ m.name }}</option>
-        </select>
-      </label>
+      <!-- the mapsets as tabs, always in sight: one click goes from one to the other and back, without a new page -->
+      <div v-if="ui.mapsets.length > 1" class="picker">
+        <span id="maps-label" class="cap">Kaart</span>
+        <div class="maps" role="tablist" aria-labelledby="maps-label">
+          <button v-for="m in ui.mapsets" :key="m.id" role="tab" :aria-selected="m.id === ui.mapset?.id" @click="ctl.openMapset(m.slug)">{{ m.name }}</button>
+        </div>
+      </div>
       <details v-if="ui.mapset?.note" class="about">
         <summary>Over deze kaart</summary>
         <div class="md" v-html="ui.mapset.note"></div>
@@ -124,8 +125,14 @@ h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; whi
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
 .switch.owner { grid-column: 1 / -1; }
 .switch.off { opacity: .5; cursor: default; }
-.picker { display: grid; gap: 4px; margin: 2px 0 10px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.picker select { font: inherit; font-size: 13.5px; font-weight: 550; letter-spacing: 0; text-transform: none; color: var(--ink); padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-strong); }
+.picker { display: grid; gap: 4px; margin: 2px 0 10px; }
+.picker .cap { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+/* tabs that size to their names and wrap: a mapset's name can be long, and there can be a handful */
+.maps { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 12px; background: var(--raise); }
+.maps button { flex: 1 1 auto; min-height: 30px; border: 0; padding: 6px 10px; border-radius: 9px; background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
+/* the open mapset is marked as the active layer is: in the dark look a raised tab alone hardly differs from the rest */
+.maps button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 650; box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.maps button:not([aria-selected="true"]):hover { background: var(--raise); color: var(--ink); }
 .notice { margin: 2px 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--raise); font-size: 12.5px; color: var(--ink-2); }
 .about { margin: 0 0 10px; border-radius: 10px; background: var(--raise); padding: 7px 10px; font-size: 13px; }
 .about summary { cursor: pointer; font-weight: 600; color: var(--ink-2); }
@@ -140,6 +147,7 @@ h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; whi
   /* the layers sit over the map here: nothing of it shows through */
   .panel:not(.collapsed) { background: var(--solid); }
   .layer { padding: 10px; }
+  .maps button { min-height: 40px; }
   .switches { grid-template-columns: 1fr; gap: 12px; }
 }
 </style>
