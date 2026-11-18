@@ -60,11 +60,15 @@ watch(() => !!props.ui.info, (open) => { if (open && matchMedia('(max-width: 640
         <p v-if="ui.legend.message" class="muted">{{ ui.legend.message }}</p>
         <template v-for="(s, i) in ui.legend.sections" :key="i">
           <div v-if="s.title" class="section">{{ s.title }}</div>
-          <div v-for="r in s.rows" :key="r.name" class="row" :class="{ empty: r.empty }">
-            <span class="sw" :style="{ background: r.color }"></span><span>{{ r.name }}</span><span class="count">{{ r.count }}</span>
+          <!-- a row of the layer is a switch: off, its buildings are no longer coloured, so the rows left on stand out -->
+          <component :is="r.key === null ? 'div' : 'button'" v-for="r in s.rows" :key="r.name" class="row" :class="{ empty: r.empty, off: r.off }"
+            v-bind="r.key === null ? {} : { type: 'button', 'aria-pressed': !r.off, title: r.off ? 'Weer tonen op de kaart' : 'Verbergen op de kaart' }"
+            @click="r.key !== null && ctl.toggleRow(r.key)">
+            <span class="sw" :style="{ background: r.color }"></span><span class="name">{{ r.name }}</span><span class="count">{{ r.count }}</span>
             <span class="bar"><i :style="{ width: r.width + '%', background: r.color }"></i></span>
-          </div>
+          </component>
         </template>
+        <button v-if="ui.legend.anyOff" type="button" class="all" @click="ctl.showAllRows()">Alles tonen</button>
         <p v-if="ui.legend.note" class="note">{{ ui.legend.note }}</p>
       </section>
       <section class="settings">
@@ -107,6 +111,13 @@ h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.015em; whi
 .legend-head span { font-size: 12px; text-align: right; }
 .section { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 10px 0 4px; min-height: 1px; }
 .row { display: grid; grid-template-columns: 14px 1fr auto; column-gap: 9px; align-items: center; padding: 3px 0; font-variant-numeric: tabular-nums; }
+button.row { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; border-radius: 6px; }
+button.row:hover { background: var(--raise); }
+.row.off .name { text-decoration: line-through; color: var(--muted); }
+.row.off .sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.row.off .bar i { opacity: .25; }
+.all { margin-top: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 550; padding: 5px 10px; border-radius: 99px; cursor: pointer; min-height: 28px; }
+.all:hover { background: var(--raise); color: var(--ink); }
 .row .sw { width: 14px; height: 14px; border-radius: 5px; }
 .row .count { color: var(--ink-2); font-size: 12.5px; }
 .row .bar { grid-column: 2 / 4; height: 3px; border-radius: 99px; background: var(--raise); margin-top: 3px; overflow: hidden; }

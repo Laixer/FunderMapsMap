@@ -267,6 +267,55 @@ export function layerStyle(id: string, palette: PaletteName): { filter: unknown;
   return { filter: rule.sourceFilter, color: map ? recolorExpression(rule.color, map) : rule.color, source: rule.source };
 }
 
+/**
+ * For the flat map: per layer of the theme, the MapLibre expression that is true for a feature in a legend row that is
+ * switched off. `off` holds row keys as ThemeResult.rows gives them (section × 256 + row). A layer without such a row
+ * is not in the answer.
+ *
+ * A gradient's rows are value ranges on the property it interpolates on. Any other layer's rows are told apart by
+ * colour, the way evaluateTheme does it: the colour literals of the rule that lie nearest to a row that is off.
+ */
+export function offExpressions(theme: Theme, off: ReadonlySet<number>, palette: PaletteName): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  if (!off.size || theme.area) return out;
+  const sectionDefs = theme.sections ?? theme.layers.map((id) => ({ legend: id, layers: [id] }));
+  sectionDefs.forEach((s, si) => {
+    const rows = compile(s.legend, palette).legend;
+    const hidden = rows.map((_, k) => off.has(si * 256 + k));
+    if (!hidden.some(Boolean)) return;
+    const ranges = rows.map((r) => legendRange(r.name));
+    for (const id of s.layers) {
+      const c = compile(id, palette);
+      const color = layerStyle(id, palette).color;
+      if (c.interpolatedOn && ranges.every(Boolean)) {
+        const p = ['get', c.interpolatedOn];
+        const parts = ranges.flatMap((r, k) => {
+          if (!hidden[k]) return [];
+          const [lo, hi, loIn, hiIn] = r!;
+          const all: unknown[] = [['==', ['typeof', p], 'number']];
+          if (lo > -Infinity) all.push([loIn ? '>=' : '>', ['to-number', p], lo]);
+          if (hi < Infinity) all.push([hiIn ? '<=' : '<', ['to-number', p], hi]);
+          return [['all', ...all]];
+        });
+        if (parts.length) out.set(id, ['any', ...parts]);
+        continue;
+      }
+      const literals = new Set<string>();
+      const walk = (e: unknown) => {
+        if (Array.isArray(e)) { e.forEach(walk); return; }
+        const rgb = parseColor(e);
+        if (rgb === null) return;
+        let best = -1, bestDistance = Infinity;
+        rows.forEach((r, k) => { const d = colorDistance(r.color, rgb); if (d < bestDistance) { bestDistance = d; best = k; } });
+        if (bestDistance <= 12 && hidden[best]) literals.add(e as string);
+      };
+      walk(color);
+      if (literals.size) out.set(id, ['in', ['to-string', color], ['literal', [...literals]]]);
+    }
+  });
+  return out;
+}
+
 /** legend colours of a theme's first section, for the little colour strip next to its name */
 export function legendColors(theme: Theme, palette: PaletteName): number[] {
   if (theme.area) return legendRows(theme.area).map((r) => r.color);
