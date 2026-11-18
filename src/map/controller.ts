@@ -12,7 +12,7 @@ import type { Engine3d } from '@/engine/engine3d';
 import type { TileFeature } from '@/engine/tiles';
 import type { BuildingLayer, Mode, TileView } from '@/engine/scene';
 import { prepareStyle, restyle, LOOKS } from '@/engine/basemap';
-import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, setLegends, updateOwners, type Theme, type ThemeResult } from '@/engine/themes';
+import { GROUPS, THEMES, NONE, countLegend, evaluateTheme, layerStyle, legendColors, legendRows, legendTitle, mapsetThemes, offExpressions, setLegends, updateOwners, type Theme, type ThemeResult } from '@/engine/themes';
 import AREA_LAYERS from '@/config/area-layers.json';
 import { toHex, type PaletteName } from '@/engine/palette';
 import * as L from '@/engine/labels';
@@ -30,7 +30,12 @@ import { ALL_LAYERS, BASEMAP, BUILDINGS_3D, TILESERVER } from '@/config';
 setWorkerUrl(maplibreWorker);
 
 // ---- UI state (plain data, made reactive by the caller) ------------------------------------------------------------
-export interface LegendRowView { color: string; name: string; count: string; width: number; empty: boolean }
+export interface LegendRowView {
+  color: string; name: string; count: string; width: number; empty: boolean;
+  /** the row's key (ThemeResult.rows) when it can be switched off on the map, else null ("Overig", "Niet in deze laag") */
+  key: number | null;
+  off: boolean;
+}
 export interface UiState {
   mode: Mode;
   palette: PaletteName;
@@ -58,7 +63,7 @@ export interface UiState {
   notice: string;
   /** a logged-in user whose organisation has no map: nothing to show but that, and the way out */
   noMapsets: boolean;
-  legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string };
+  legend: { title: string; total: string; note: string; sections: { title: string; rows: LegendRowView[] }[]; message: string; anyOff: boolean };
   status: { text: string; busy: boolean };
   tooltip: null | { x: number; y: number; title: string; more: string; swatch: string; valueTitle: string; valueLabel: string; facts: [string, string][] };
   info: null | {
@@ -76,7 +81,7 @@ export function initialUi(): UiState {
     // building outlines: off (Yorick 2026-10-22: "remove the outline on the 3d buildings, its convoluted"); the selected
     // and hovered building keep theirs
     lines: false, shadows: true, context: true, clusters: false, mapset: null, mapsets: [], owner: null, ownerOnly: false, flat: false, trees: store.get('fm-trees') !== 'off', notice: '', noMapsets: false,
-    legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…' },
+    legend: { title: '', total: '', note: '', sections: [], message: 'Gegevens laden…', anyOff: false },
     status: { text: 'Laden…', busy: true },
     tooltip: null, info: null,
   };
@@ -213,6 +218,12 @@ export class MapController {
   private flatSelected: { id: string; props: Props } | null = null;
   /** in the 3D view: the buildings of the loaded tiles without a usable 3D model, drawn as blocks (renderFlat) */
   private blockIds = new Set<string>();
+  /**
+   * Legend rows switched off (keys as in ThemeResult.rows): their buildings count as not in this layer, so only the
+   * rows that are on stand out. Kept per mapset and layer; a change of either starts with every row on.
+   */
+  private offRows = new Set<number>();
+  private offFor = '';
 
   /**
    * Start the map on the basemap already restyled, so the original basemap never shows while it loads. A mapset and a
@@ -623,7 +634,7 @@ export class MapController {
     for (let i = 0; i < n; i++) {
       const b = entry.featureBuilding![i];
       let c = b >= 0 ? neutral.noData : neutral.context;
-      if (b >= 0 && this.result && this.result.colors[b] !== NONE) c = this.result.colors[b];
+      if (b >= 0 && this.result && this.result.colors[b] !== NONE && !this.offRows.has(this.result.rows[b])) c = this.result.colors[b];
       out[i * 4] = c >> 16;
       out[i * 4 + 1] = (c >> 8) & 255;
       out[i * 4 + 2] = c & 255;
@@ -654,6 +665,8 @@ export class MapController {
     // the ownership layer names the owners among the buildings loaded: rank them before colouring. When that changed
     // its rule, renderFlat below draws the 2D layers with the new one (it draws them again on every call).
     if (this.theme.layers.includes('owner')) updateOwners(this.data.buildings);
+    const shown = `${this.mapset?.id ?? 'all'}:${this.theme.id}`;
+    if (shown !== this.offFor) { this.offFor = shown; this.offRows.clear(); }
     // an area theme colours no buildings (they stay neutral) and draws its layer on the ground
     this.result = this.data.buildings.length && !this.theme.area ? evaluateTheme(this.theme, this.data.buildings, this.ui.palette) : null;
     this.renderLayers();
@@ -754,10 +767,21 @@ export class MapController {
     // "Omgeving": every building no layer of the theme draws, in the neutral grey of the 3D view (never under a
     // coloured block, so the two never fight over the same walls). Layers on other sources (facade scan, incidents) are
     // drawn on their own tiles, so the grey cannot exclude their buildings: there the coloured blocks sit just above it.
+    // A legend row that is switched off: its buildings are not drawn by the layer whose row it is, nor by the layers
+    // under it (in 3D the first layer that draws a building decides, and there it turns grey).
+    const offs = offExpressions(this.theme, this.offRows, this.ui.palette);
+    const offAbove: unknown[] = [];
     const styles = this.theme.layers.map((rule) => {
       const style = layerStyle(rule, this.ui.palette);
+      const hide = style.source === 'buildings' ? offs.get(rule) : undefined;
+      const parts: unknown[] = [];
+      if (style.filter) parts.push(style.filter);
+      if (hide) parts.push(['!', hide]);
+      if (style.source === 'buildings') for (const h of offAbove) parts.push(['!', h]);
+      if (hide) offAbove.push(style.filter ? ['all', style.filter, hide] : hide);
       // outside the mapset's fence a building stays grey, as in 3D
-      const filter = this.fence ? (style.filter ? ['all', style.filter, this.fence] : this.fence) : style.filter;
+      if (this.fence) parts.push(this.fence);
+      const filter = parts.length > 1 ? ['all', ...parts] : parts[0] ?? null;
       return { rule, ...style, filter };
     });
     const filters = styles.filter((s) => s.source === 'buildings').map((s) => s.filter ?? true);
@@ -986,6 +1010,26 @@ export class MapController {
     if (t) this.theme = t;
   }
 
+  /** a legend row on or off. Off: its buildings count as not in this layer (grey in 3D; on the flat map with "Omgeving") */
+  toggleRow(key: number) {
+    if (this.offRows.has(key)) this.offRows.delete(key);
+    else this.offRows.add(key);
+    this.applyRows();
+  }
+
+  /** every legend row on again */
+  showAllRows() {
+    if (!this.offRows.size) return;
+    this.offRows.clear();
+    this.applyRows();
+  }
+
+  private applyRows() {
+    this.renderLegend();
+    this.repaintAll(true);
+    this.renderFlat();
+  }
+
   setGroup(g: string) {
     if (g === this.ui.group) return;
     this.ui.group = g;
@@ -1052,7 +1096,8 @@ export class MapController {
       legendUi.total = '';
       legendUi.message = '';
       legendUi.note = this.theme.note ?? `${legendTitle(this.theme.area)}, zichtbaar tot zoomniveau 14.`;
-      legendUi.sections = [{ title: '', rows: legendRows(this.theme.area).map((r) => ({ color: toHex(r.color), name: r.name, count: '', width: 0, empty: false })) }];
+      legendUi.sections = [{ title: '', rows: legendRows(this.theme.area).map((r) => ({ color: toHex(r.color), name: r.name, count: '', width: 0, empty: false, key: null, off: false })) }];
+      legendUi.anyOff = false;
       return;
     }
     if (!this.result) {
@@ -1066,15 +1111,17 @@ export class MapController {
     const n = this.data.buildings.length;
     const legend = countLegend(this.result, 0, n);
     const max = Math.max(1, ...legend.sections.flatMap((s) => s.rows.map((r) => r.count)), legend.none);
-    const row = (color: number, name: string, count: number): LegendRowView => ({
+    const row = (color: number, name: string, count: number, key: number | null = null): LegendRowView => ({
       color: toHex(color), name, count: nf.format(count), width: count ? Math.max(1.5, (count / max) * 100) : 0, empty: !count,
+      key, off: key !== null && this.offRows.has(key),
     });
     legendUi.total = `${nf.format(n)} panden rond het beeld`;
     legendUi.message = '';
-    legendUi.sections = legend.sections.map((s) => ({
+    legendUi.sections = legend.sections.map((s, si) => ({
       title: legend.sections.length > 1 ? s.title : '',
-      rows: [...s.rows.map((r) => row(r.color, r.name, r.count)), ...(s.other ? [row(0x71decc, 'Overig', s.other)] : [])],
+      rows: [...s.rows.map((r, k) => row(r.color, r.name, r.count, si * 256 + k)), ...(s.other ? [row(0x71decc, 'Overig', s.other)] : [])],
     }));
+    legendUi.anyOff = this.offRows.size > 0;
     if (legend.none) legendUi.sections.push({ title: ' ', rows: [row(NEUTRAL[this.ui.mode].noData, 'Niet in deze laag', legend.none)] });
   }
 
