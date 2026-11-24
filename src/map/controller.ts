@@ -1272,7 +1272,7 @@ export class MapController {
   }
 }
 
-/** a building from the address (pand number or an old gfm id) → its pand number and where it is (our geocoder) */
+/** a building from the address (a pand number, or another BAG number the geocoder resolves) → its pand number and where it is (our geocoder) */
 async function locate(id: string, signal?: AbortSignal): Promise<{ pand: string; lon: number; lat: number } | null> {
   // a pand number, or what the current map put in its links after an address search: the address's own BAG number
   const info = await buildingInfo(bagId(id) ?? id, signal);

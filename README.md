@@ -1,8 +1,9 @@
 # FunderMaps map (5.0)
 
 The customer map of FunderMaps in 3D: every building of the Netherlands as its 3D model, coloured by its
-foundation type, repair, subsidence and foundation risk. It grows out of the 3D prototype of October 2026 and replaces
-the current map app (FunderMapsWebFront) once it does everything that app does.
+foundation type, repair, subsidence and foundation risk. It grew out of the 3D prototype of October 2026 and is the
+public map since 13 November 2026, when it replaced the earlier map app (FunderMapsWebFront, no longer deployed). Where
+this text says "the earlier map app", that is the one meant.
 
 ## Run
 
@@ -25,8 +26,8 @@ pnpm build      # type check + production build into dist/
 - **FunderMaps data:** our own vector tiles (Martin) at zoom 14: `buildings` (every field per building), `facade_scan`
   and `incident`. A worker decodes only the properties and merges them per building (`src/data/`); they are joined to
   the 3D features on the 16-digit BAG pand number. Incidents per buurt, wijk and gemeente and the building blocks are
-  drawn on the ground with the current map app's own layer specs (`src/config/area-layers.json`).
-- **Colours** are the current map app's own layer rules and the database legends (`src/engine/rules.json`,
+  drawn on the ground with the earlier map app's own layer specs (`src/config/area-layers.json`).
+- **Colours** are the earlier map app's own layer rules and the database legends (`src/engine/rules.json`,
   `legends.json`, frozen by `tools/freeze-rules.py`), evaluated with MapLibre's style-spec engine, optionally in the
   2026 palette. An open mapset brings its own legends at runtime.
 - **Ownership (layer `owner`, "Eigendom"):** hundreds of owners do not fit a legend, so this layer's rule and legend
@@ -36,9 +37,9 @@ pnpm build      # type check + production build into dist/
   a mapset's layer set contains the layer id `owner`.
 - **Mapsets and links:** `/map/<mapset>` opens a public mapset from the API (`/api/mapset/<id or slug>`): its layer
   set, note, disclaimer, centre and fence. `/map/<mapset>/building/<pand id>(/<panel>)` opens a building on it; the
-  current map app's old forms (`/kaart/…`, `…/gebouw/…`) and `?lat=…&lng=…` work too. The camera is in the hash
+  earlier map app's old forms (`/kaart/…`, `…/gebouw/…`) and `?lat=…&lng=…` work too. The camera is in the hash
   (`src/map/route.ts`).
-- **Who sees what:** every view is a mapset's view, as on the current map; without a mapset there is no data on the
+- **Who sees what:** every view is a mapset's view, as on the earlier map; without a mapset there is no data on the
   map. A guest gets public mapsets only: the one in the address, else the public one looked at last, else the login
   page. A user gets the mapset in the address, else the one looked at last, else their first; an unknown or foreign
   one falls back to their own, with a note; without any mapset they are told so (`components/NoMapsets.vue`). A
@@ -47,7 +48,7 @@ pnpm build      # type check + production build into dist/
   our data on a building is on the page or in its state. The view with every layer of the country
   exists only for work on the layers (`pnpm dev`, or a build with `VITE_ALL_LAYERS=1`).
 - **Login:** the session is the API's cookie (Better Auth), nothing of it is kept here. `src/api/session.ts` asks
-  `/api/user/me` once; without a session the visitor is a guest. The login pages are the current map app's:
+  `/api/user/me` once; without a session the visitor is a guest. The login pages are the earlier map app's:
   `/login`, `/forgot-password`, `/reset-password`, `/account` (passkeys, sign-out), plus the profile and password
   dialogs behind the user menu (`src/pages/AuthPages.vue`, `src/api/auth.ts`). The cookie belongs to the login host's
   site, so on any other host name the map stays a guest's map and the login pages forward to `VITE_LOGIN_HOST`.
@@ -55,18 +56,18 @@ pnpm build      # type check + production build into dist/
   organisation in the Studio's Beheer, sent with `/api/user/me`), with a mail and a phone link; without one, the general
   address (`VITE_CONTACT_EMAIL`). The map has no "organisation you are working in": someone in several organisations
   with different account holders sees each, with the organisation it is for (`src/api/contacts.ts`).
-- **Building panel** (`src/panel/`): for a logged-in user, everything the current map app shows for a building, from
+- **Building panel** (`src/panel/`): for a logged-in user, everything the earlier map app shows for a building, from
   the API's customer part: key facts, Pand, Locatie, Fundering, Funderingsrisico, Onderzoek and Herstel (with their
   samples and documents), Incidenten, the statistics of the neighbourhood (Chart.js, loaded with the dialog) and the
   PDF report. The view is in the address (`…/building/<pand>/<panel>`). Labels and enum texts are frozen from the
-  current map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest gets
+  earlier map app (`tools/freeze-labels.py` → `src/panel/labels.json`); enum values are matched by name. A guest gets
   no panel and no card (see "Who sees what"). The analysis and statistics calls are the billed
   ones, as today. Under each risk the Funderingsrisico view says "Waarom deze risico-indicatie?": what the letter rests
   on, as the model recorded it and the analysis sends it (`explanation`), worded in `src/panel/explanation.ts`.
 - **A user's own mapsets:** with a login the organisation's mapsets come from `/api/mapset`; a picker in the panel
   switches between them, and an address without a mapset opens the one looked at last. "Filter op eigendom" keeps only
   the buildings whose owner in our tiles is the user's organisation.
-- **Where you were:** the last position is remembered as the current map app does it (`src/map/position.ts`): with the
+- **Where you were:** the last position is remembered as the earlier map app does it (`src/map/position.ts`): with the
   account for a user (`/api/user/metadata`, the same keys), in the browser for a guest. A building or a position in
   the address wins.
 - **3D or 2D:** the "3D-panden" switch chooses between the 3D models and a plain 2D map: our own building tiles as
@@ -86,7 +87,7 @@ pnpm build      # type check + production build into dist/
   sheet from the bottom, lists stack, touch targets are 40 px.
 - **Keyboard:** the building panel takes the focus when it opens, each view moves it to its heading, Escape goes back
   a view and then closes the panel; dialogs are native `<dialog>`s.
-- **Search:** a BAG number (pand, address or verblijfsobject, with or without `NL.IMBAG.…`) or an old gfm id opens
+- **Search:** a BAG number (pand, address or verblijfsobject, with or without `NL.IMBAG.…`) opens
   that building; anything else is an address search: PDOK Locatieserver for the whole country; the API's public building lookup gives the address of a
   selected building.
 

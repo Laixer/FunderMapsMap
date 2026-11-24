@@ -1,0 +1,42 @@
+# Dependabot version updates.
+# Security updates are enabled repo-wide and are not controlled by this file.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# A merge to main deploys the public map; there is no staging. Read a bump's build and the map itself before merging.
+
+version: 2
+updates:
+  - package-ecosystem: "npm" # also covers pnpm
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # The login library must stay in step with the API's server side: package.json pins the family with `~`, so only
+    # patches are proposed, and those get their own group below, never the routine bundle. A bump of it is a
+    # deliberate pull request, checked with a real login.
+    ignore:
+      - dependency-name: "better-auth"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "@better-auth/*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+    # Group routine bumps so this is one pull request a week, not five.
+    # Majors stay ungrouped: they get their own pull request and a real review.
+    groups:
+      better-auth:
+        patterns: ["better-auth", "@better-auth/*"]
+        update-types: ["patch"]
+      dev-dependencies:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+      prod-dependencies:
+        dependency-type: "production"
+        exclude-patterns: ["better-auth", "@better-auth/*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]

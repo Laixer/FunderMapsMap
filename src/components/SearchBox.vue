@@ -23,7 +23,7 @@ function onInput() {
     abort = new AbortController();
     searching.value = true;
     try {
-      // a BAG number or an old id: the building itself, not an address search
+      // a BAG number: the building itself, not an address search
       const id = bagId(q);
       if (id) {
         const found = await resolveId(id, abort.signal);

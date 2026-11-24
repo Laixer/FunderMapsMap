@@ -19,9 +19,10 @@ export async function suggest(query: string, near?: { lon: number; lat: number }
 }
 
 /**
- * A BAG number or one of our old ids, as someone pastes it from a report or a spreadsheet: a pand
- * (NL.IMBAG.PAND.<16 digits>), an address (NL.IMBAG.NUMMERAANDUIDING.…), a verblijfsobject, the bare 16 digits, or an
- * old gfm- id. Null for anything else (an address typed in words goes to PDOK).
+ * A BAG number, as someone pastes it from a report or a spreadsheet: a pand (NL.IMBAG.PAND.<16 digits>), an address
+ * (NL.IMBAG.NUMMERAANDUIDING.…), a verblijfsobject, or the bare 16 digits. Null for anything else (an address typed in
+ * words goes to PDOK). Our own old `gfm-` ids are no longer among them: none exists any more, and the geocoder refuses
+ * the form.
  */
 export function bagId(query: string): string | null {
   const q = query.trim();
@@ -32,7 +33,7 @@ export function bagId(query: string): string | null {
     const kind = { '10': 'PAND', '20': 'NUMMERAANDUIDING', '01': 'VERBLIJFSOBJECT', '02': 'LIGPLAATS', '03': 'STANDPLAATS' }[q.slice(4, 6)];
     return kind ? `NL.IMBAG.${kind}.${q}` : null;
   }
-  return /^gfm-[0-9a-f]{32}$/i.test(q) ? q.toLowerCase() : null;
+  return null;
 }
 
 /** such an id → the building to open; null when we do not know it */
@@ -71,7 +72,7 @@ export interface BuildingInfo {
   building_lat?: number;
 }
 
-/** our public geocoder: a pand, address or gfm id → address, buurt, wijk, gemeente, provincie */
+/** our public geocoder: a pand, address or verblijfsobject id → address, buurt, wijk, gemeente, provincie */
 export async function buildingInfo(id: string, signal?: AbortSignal): Promise<BuildingInfo | null> {
   try {
     const res = await fetch(`${API}/api/geocoder/building-info/${encodeURIComponent(id)}`, { signal });

@@ -6,7 +6,7 @@
 // The camera position lives in the hash (MapLibre), which every change here keeps.
 export interface Route {
   mapset: string | null;
-  /** the 16-digit pand number, or an id the geocoder resolves (an old gfm id) */
+  /** the 16-digit pand number, or another BAG number the geocoder resolves (an address, a verblijfsobject) */
   building: string | null;
   /** a panel of the building card; kept in the address, the card has no panels yet */
   panel: string | null;
