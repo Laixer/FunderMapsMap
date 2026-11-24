@@ -20,7 +20,7 @@ export function failureMessage(status: number, code: unknown): string {
 }
 
 /** POST (or GET) /api/auth<path>. Throws an Error whose message can be shown as it is. */
-async function call<T = unknown>(path: string, body?: Record<string, unknown>, method: 'GET' | 'POST' = 'POST'): Promise<T> {
+async function call<T = unknown>(path: string, body?: Record<string, unknown>, method: 'GET' | 'POST' = 'POST', signal?: AbortSignal): Promise<T> {
   let res: Response;
   let text: string;
   try {
@@ -28,7 +28,7 @@ async function call<T = unknown>(path: string, body?: Record<string, unknown>, m
     // without one (415), and the visitor would stay logged in.
     const post = method === 'POST';
     res = await fetch(`${API}/api/auth${path}`, {
-      method, credentials: 'include',
+      method, credentials: 'include', signal,
       headers: post ? { 'Content-Type': 'application/json' } : undefined,
       body: post ? JSON.stringify(body ?? {}) : undefined,
     });
@@ -46,9 +46,10 @@ export interface SessionUser { id: string; email: string; name?: string | null }
 
 export const login = (email: string, password: string) => call('/sign-in/email', { email, password }).then(() => undefined);
 
-export async function getSession(): Promise<{ user: SessionUser } | null> {
+/** the session of this browser, or null for a guest (the API answers 200 either way); `signal` bounds the wait */
+export async function getSession(signal?: AbortSignal): Promise<{ user: SessionUser } | null> {
   try {
-    const res = await call<{ user?: SessionUser } | null>('/get-session', undefined, 'GET');
+    const res = await call<{ user?: SessionUser } | null>('/get-session', undefined, 'GET', signal);
     return res?.user ? { user: res.user } : null;
   } catch {
     return null;

@@ -1,6 +1,7 @@
 // Who is looking at the map. A visitor without a session is a guest, not an error: the map is public.
 import { reactive } from 'vue';
 import { api, onSessionExpired } from './client';
+import { getSession } from './auth';
 import { LOGIN_HOST } from '@/config';
 
 /** the FunderMaps person an organisation's users can turn to; set per organisation in Beheer, the details are that person's own profile */
@@ -60,7 +61,11 @@ let loading: Promise<User | null> | null = null;
 export function loadSession(): Promise<User | null> {
   loading ??= (async () => {
     if (onLoginHost()) {
-      try { session.user = fromApi(await api<ApiUserMe>('user/me', { quiet401: true, signal: AbortSignal.timeout(8000) })); }
+      // First the session probe, which answers 200 for a guest too; the profile is asked for only when there is a
+      // session. Asking a guest's browser for the profile gives a 401, which the browser prints as an error on every
+      // visit. Both calls share one time limit, so a slow API never holds the map back longer than before.
+      const signal = AbortSignal.timeout(8000);
+      try { session.user = (await getSession(signal)) ? fromApi(await api<ApiUserMe>('user/me', { quiet401: true, signal })) : null; }
       catch { session.user = null; }
     }
     session.ready = true;
